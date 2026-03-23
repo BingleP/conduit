@@ -150,6 +150,7 @@ function initDOM() {
   DOM.ceReplaceBtn          = $('ce-replace-btn');
   DOM.ceKeepBtn             = $('ce-keep-btn');
   DOM.ceSubmitBtn           = $('ce-submit-btn');
+  DOM.ceError               = $('ce-error');
 
   DOM.settingsBtn       = $('settings-btn');
   DOM.settingsModal     = $('settings-modal');
@@ -1108,6 +1109,14 @@ async function _submitCustomEncode() {
   const selectedFiles = state.files.filter(f => state.selectedIds.has(f.id));
   if (selectedFiles.length === 0) return;
 
+  DOM.ceError.classList.add('hidden');
+
+  if (DOM.ceOutputCodec.value === 'vp9' && DOM.ceContainer.value === 'mp4') {
+    DOM.ceError.textContent = 'VP9 is not compatible with MP4. Use MKV or WebM.';
+    DOM.ceError.classList.remove('hidden');
+    return;
+  }
+
   // Check for output filename collisions before doing anything irreversible
   if (state._ceOutputDir) {
     const collisions = _detectOutputDirCollisions(selectedFiles);
@@ -1987,6 +1996,13 @@ async function saveSettings() {
 
   const selectedCodec = DOM.settingsOutputCodec.querySelector('input[type="radio"]:checked');
 
+  if (selectedCodec?.value === 'vp9' && DOM.settingsOutputContainer.value === 'mp4') {
+    DOM.settingsError.textContent = 'VP9 is not compatible with the MP4 container. Use MKV or WebM.';
+    DOM.settingsError.classList.remove('hidden');
+    DOM.settingsSaveBtn.disabled = false;
+    return;
+  }
+
   const webUiPort = parseInt(DOM.settingsWebUiPort.value, 10);
 
   try {
@@ -2240,7 +2256,7 @@ function renderAboutHtml(s) {
       ${row('Audio (lossless)', 'TrueHD, DTS-HD MA, FLAC, and PCM tracks are <strong>copied without re-encoding</strong> to avoid any quality loss.')}
       ${forceStereo ? row('Force Stereo', 'All audio tracks are <strong>downmixed to stereo (2.0)</strong>.') : ''}
       ${normalize   ? row('Normalization', 'EBU R128 loudness normalization applied — target <strong>−23 LUFS</strong>, true peak <strong>−2 dBTP</strong>.') : ''}
-      ${row('Subtitles', subtitleMode === 'drop' ? 'All subtitle tracks are <strong>dropped</strong>.' : 'Subtitle tracks are <strong>copied</strong> (pass-through, filtered by language).')}
+      ${row('Subtitles', subtitleMode === 'strip' ? 'All subtitle tracks are <strong>stripped</strong>.' : 'Subtitle tracks are <strong>copied</strong> (pass-through, filtered by language).')}
       ${row('Track Selection', `Keeping <strong>${langLabel}</strong>. If no matching track is found, the first audio track is kept as a fallback. Applies to subtitles too. DVB teletext/subtitle tracks are always dropped.`)}
       ${row('Output', outputDesc)}
     </div>

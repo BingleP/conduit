@@ -291,6 +291,9 @@ def update_settings(req: UpdateSettingsRequest):
         WEB_UI_PORT = req.web_ui_port
         config["web_ui_port"] = req.web_ui_port
 
+    if OUTPUT_VIDEO_CODEC == "vp9" and OUTPUT_CONTAINER == "mp4":
+        raise HTTPException(status_code=400, detail="VP9 is not compatible with the MP4 container. Use MKV or WebM.")
+
     with open(_CONFIG_PATH, "w") as f:
         json.dump(config, f, indent=2)
     return {"ok": True}
@@ -511,6 +514,10 @@ def create_jobs(req: AddJobsRequest):
         raise HTTPException(status_code=400, detail="job_type must be 'encode' or 'remux'")
     if not req.file_ids:
         raise HTTPException(status_code=400, detail="file_ids must not be empty")
+    eff_codec     = req.output_video_codec or OUTPUT_VIDEO_CODEC
+    eff_container = req.output_container   or OUTPUT_CONTAINER
+    if eff_codec == "vp9" and eff_container == "mp4":
+        raise HTTPException(status_code=400, detail="VP9 is not compatible with the MP4 container. Use MKV or WebM.")
 
     conn = get_db()
     created = []
