@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Conduit
+Comment=Video library manager and optimizer
+Exec=/home/bing/.local/bin/conduit
+Path=/home/bing/Documents/Github Projects/conduit
+Icon=video-display
+Categories=AudioVideo;Video;
+Terminal=false
+StartupWMClass=Conduit
+Keywords=media;video;encode;transcode;optimize;conduit;

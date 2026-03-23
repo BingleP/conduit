@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Conduit</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <header id="header">
+    <div class="header-left">
+      <button id="sidebar-toggle" class="sidebar-toggle-btn" title="Toggle sidebar">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <span class="header-title">Conduit</span>
+    </div>
+    <div class="header-right">
+      <div id="scan-indicator" class="scan-indicator hidden">
+        <span class="scan-dot"></span>
+        <span id="scan-label">Scanning…</span>
+      </div>
+      <div id="scan-idle" class="scan-idle">Ready</div>
+      <button id="settings-btn" class="header-icon-btn" title="Settings">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" stroke="currentColor" stroke-width="1.5"/>
+        </svg>
+      </button>
+      <button id="about-btn" class="header-icon-btn" title="About">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M12 11v5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          <circle cx="12" cy="8" r="0.5" fill="currentColor" stroke="currentColor" stroke-width="1.5"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <div id="app">
+    <aside id="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-title">Folders</span>
+      </div>
+      <ul id="folder-list" class="folder-list"></ul>
+      <button id="add-folder-btn" class="btn-add-folder">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        Add Folder
+      </button>
+    </aside>
+
+    <main id="main-content">
+      <div id="filter-bar">
+        <div class="filter-row">
+          <select id="filter-folder" class="filter-select">
+            <option value="">All Folders</option>
+          </select>
+          <select id="filter-resolution" class="filter-select">
+            <option value="">All Resolutions</option>
+            <option value="4k">4K (UHD)</option>
+            <option value="1080p">1080p (FHD)</option>
+            <option value="720p">720p (HD)</option>
+            <option value="sd">SD</option>
+          </select>
+          <select id="filter-codec" class="filter-select">
+            <option value="">All Codecs</option>
+            <option value="hevc">HEVC / H.265</option>
+            <option value="h264">H.264 / AVC</option>
+            <option value="av1">AV1</option>
+            <option value="vp9">VP9</option>
+            <option value="mpeg2video">MPEG-2</option>
+          </select>
+          <select id="filter-hdr" class="filter-select">
+            <option value="">All HDR</option>
+            <option value="sdr">SDR</option>
+            <option value="hdr10">HDR10</option>
+            <option value="hlg">HLG</option>
+            <option value="hdr10plus">HDR10+</option>
+            <option value="dolby_vision">Dolby Vision</option>
+          </select>
+          <select id="filter-audio-lang" class="filter-select">
+            <option value="">All Languages</option>
+            <option value="eng">English</option>
+            <option value="jpn">Japanese</option>
+            <option value="fre">French</option>
+            <option value="ger">German</option>
+            <option value="spa">Spanish</option>
+            <option value="chi">Chinese</option>
+          </select>
+          <select id="filter-audio-codec" class="filter-select">
+            <option value="">All Audio</option>
+            <option value="eac3">EAC3 (Dolby Digital+)</option>
+            <option value="ac3">AC3 (Dolby Digital)</option>
+            <option value="dts">DTS</option>
+            <option value="truehd">TrueHD</option>
+            <option value="aac">AAC</option>
+            <option value="opus">Opus</option>
+            <option value="flac">FLAC</option>
+            <option value="mp3">MP3</option>
+          </select>
+          <select id="filter-optimize" class="filter-select">
+            <option value="">All Files</option>
+            <option value="1">Needs Optimize</option>
+            <option value="0">Optimized</option>
+          </select>
+          <div class="search-wrap">
+            <svg class="search-icon" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.5"/><path d="m16.5 16.5 3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            <input id="search-input" type="text" class="search-input" placeholder="Search filename…" />
+          </div>
+        </div>
+        <div class="filter-actions">
+          <span id="file-count-label" class="file-count-label">0 files</span>
+          <div class="pagination-controls">
+            <button id="prev-page-btn" class="btn-page" disabled>&#8249;</button>
+            <span id="page-label" class="page-label">1 – 0 of 0</span>
+            <button id="next-page-btn" class="btn-page" disabled>&#8250;</button>
+          </div>
+          <button id="optimize-btn" class="btn-optimize" disabled>
+            <svg viewBox="0 0 24 24" fill="none"><path d="M13 10V3L4 14h7v7l9-11h-7z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+            Optimize Selected
+          </button>
+        </div>
+      </div>
+
+      <div id="table-wrapper">
+        <table id="file-table">
+          <colgroup>
+            <col><col><col><col><col><col><col><col><col><col><col><col>
+          </colgroup>
+          <thead>
+            <tr>
+              <th class="col-check"><input type="checkbox" id="select-all-cb" /></th>
+              <th class="col-filename sortable" data-col="filename">Filename <span class="sort-arrow"></span><div class="resize-handle"></div></th>
+              <th class="col-folder">Folder<div class="resize-handle"></div></th>
+              <th class="col-resolution sortable" data-col="width">Resolution <span class="sort-arrow"></span><div class="resize-handle"></div></th>
+              <th class="col-hdr">HDR<div class="resize-handle"></div></th>
+              <th class="col-codec sortable" data-col="video_codec">Video <span class="sort-arrow"></span><div class="resize-handle"></div></th>
+              <th class="col-audio sortable" data-col="audio_codec">Audio <span class="sort-arrow"></span><div class="resize-handle"></div></th>
+              <th class="col-subs">Subs<div class="resize-handle"></div></th>
+              <th class="col-size sortable" data-col="size_bytes">Size <span class="sort-arrow"></span><div class="resize-handle"></div></th>
+              <th class="col-bitrate sortable" data-col="bitrate_kbps">Bitrate <span class="sort-arrow"></span><div class="resize-handle"></div></th>
+              <th class="col-duration sortable" data-col="duration_s">Duration <span class="sort-arrow"></span><div class="resize-handle"></div></th>
+              <th class="col-opt sortable" data-col="needs_optimize">Opt <span class="sort-arrow"></span></th>
+            </tr>
+          </thead>
+          <tbody id="file-tbody">
+            <tr class="empty-row"><td colspan="12">No files. Add a folder to get started.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div id="flagged-panel" class="flagged-panel collapsed">
+        <div id="flagged-toggle" class="flagged-toggle">
+          <span class="flagged-title">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="var(--flag-color)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><line x1="12" y1="9" x2="12" y2="13" stroke="var(--flag-color)" stroke-width="1.5" stroke-linecap="round"/><line x1="12" y1="17" x2="12.01" y2="17" stroke="var(--flag-color)" stroke-width="2" stroke-linecap="round"/></svg>
+            Flagged Files
+          </span>
+          <span id="flagged-count-badge" class="flagged-count-badge hidden">0</span>
+          <div id="flagged-breakdown" class="flagged-breakdown"></div>
+          <svg id="flagged-chevron" class="flagged-chevron" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div id="flagged-body" class="flagged-body">
+          <div id="flagged-list" class="flagged-list"></div>
+        </div>
+      </div>
+
+      <div id="queue-panel" class="queue-panel collapsed">
+        <div id="queue-toggle" class="queue-toggle">
+          <span class="queue-title">
+            <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="4" rx="1" fill="var(--accent-red)"/><rect x="3" y="10" width="14" height="4" rx="1" fill="var(--border)"/><rect x="3" y="17" width="10" height="4" rx="1" fill="var(--border)"/></svg>
+            Encode Queue
+          </span>
+          <span id="queue-count-badge" class="queue-count-badge hidden">0</span>
+          <svg id="queue-chevron" class="queue-chevron" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div id="queue-body" class="queue-body">
+          <div class="queue-tabs">
+            <button class="queue-tab active" data-tab="queue">Queue</button>
+            <button class="queue-tab" data-tab="log">Log</button>
+            <button class="queue-tab" data-tab="history">History</button>
+          </div>
+          <div id="queue-tab-queue" class="queue-tab-content active">
+            <div id="progress-section" class="progress-section hidden">
+              <div class="progress-header">
+                <span id="progress-filename" class="progress-filename">—</span>
+                <span id="progress-badge" class="progress-badge">encode</span>
+              </div>
+              <div class="progress-track">
+                <div id="progress-fill" class="progress-fill" style="width:0%"></div>
+              </div>
+              <div class="progress-meta">
+                <span id="progress-percent">0%</span>
+                <span id="progress-fps">0 fps</span>
+                <span id="progress-speed">0x</span>
+                <span id="progress-eta">ETA —</span>
+              </div>
+            </div>
+            <div id="queue-list" class="queue-list"></div>
+          </div>
+          <div id="queue-tab-log" class="queue-tab-content">
+            <pre id="encode-log" class="encode-log">No encode running.</pre>
+          </div>
+          <div id="queue-tab-history" class="queue-tab-content">
+            <div id="history-list" class="history-list"></div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- File Detail Drawer -->
+  <div id="file-detail-drawer" class="file-detail-drawer">
+    <div class="drawer-header">
+      <span id="drawer-filename" class="drawer-filename"></span>
+      <button id="drawer-close" class="drawer-close" title="Close">&#x2715;</button>
+    </div>
+    <div id="drawer-body" class="drawer-body"></div>
+    <div class="drawer-footer">
+      <button id="drawer-optimize-btn" class="btn-optimize hidden">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M13 10V3L4 14h7v7l9-11h-7z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+        Optimize
+      </button>
+    </div>
+  </div>
+
+  <!-- Add Folder Modal -->
+  <div id="add-folder-modal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title">Add Media Folder</span>
+        <button class="modal-close" data-modal="add-folder-modal">&#x2715;</button>
+      </div>
+      <div class="modal-body">
+        <label class="modal-label">Folder Path</label>
+        <input id="folder-path-input" type="text" class="modal-input" placeholder="/mnt/media/movies" />
+        <p class="modal-hint">Absolute path to a folder containing video files. Subfolders are included. A scan will start automatically.</p>
+        <div id="add-folder-error" class="modal-error hidden"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-cancel" data-modal="add-folder-modal">Cancel</button>
+        <button id="confirm-add-folder-btn" class="btn-confirm">Add &amp; Scan</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- HDR Modal -->
+  <div id="hdr-modal" class="modal-overlay hidden">
+    <div class="modal modal-hdr">
+      <div class="modal-header">
+        <span class="modal-title">Dynamic HDR Detected</span>
+        <button class="modal-close" data-modal="hdr-modal">&#x2715;</button>
+      </div>
+      <div class="modal-body">
+        <div id="hdr-modal-files-list" class="hdr-files-list"></div>
+        <div class="hdr-warning">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" stroke="var(--accent-red)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div>
+            <p><strong>HDR10+ or Dolby Vision</strong> metadata cannot survive re-encoding. Choose how to process these files:</p>
+            <ul>
+              <li><strong>Remux</strong> — Copy video stream as-is, transcode audio only. HDR metadata preserved. Fastest.</li>
+              <li><strong>Re-encode</strong> — Full transcode with hevc_nvenc. Dynamic HDR lost; falls back to HDR10 or SDR tone mapping. Smaller file.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-cancel" data-modal="hdr-modal">Cancel</button>
+        <button id="hdr-remux-btn" class="btn-remux">Remux (Preserve HDR)</button>
+        <button id="hdr-reencode-btn" class="btn-reencode">Re-encode (Lose HDR)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settings-modal" class="modal-overlay hidden">
+    <div class="modal modal-wide modal-settings">
+      <div class="modal-header">
+        <span class="modal-title">Settings</span>
+        <button class="modal-close" data-modal="settings-modal">&#x2715;</button>
+      </div>
+      <div class="settings-modal-body">
+
+        <div class="settings-tabs">
+          <button class="settings-tab active" data-stab="encoder">Encoder</button>
+          <button class="settings-tab" data-stab="video">Video</button>
+          <button class="settings-tab" data-stab="audio">Audio</button>
+          <button class="settings-tab" data-stab="flagging">Flagging</button>
+          <button class="settings-tab" data-stab="network">Network</button>
+        </div>
+
+        <!-- Encoder tab -->
+        <div id="stab-encoder" class="settings-tab-content active">
+          <div class="settings-field">
+            <label class="modal-label">Hardware Accelerator</label>
+            <select id="settings-hw-encoder" class="modal-input">
+              <option value="nvenc">NVIDIA NVENC — RTX / GTX 9xx+</option>
+              <option value="qsv">Intel Quick Sync (QSV) — 6th gen Core+</option>
+              <option value="amf">AMD AMF — RX 400 series+</option>
+            </select>
+            <p class="modal-hint">GPU used for hardware encoding. Takes effect on the next queued job. Remux jobs are always CPU-only.</p>
+          </div>
+          <div class="settings-field">
+            <label class="modal-label">ffmpeg Path</label>
+            <input id="settings-ffmpeg" type="text" class="modal-input" placeholder="ffmpeg" />
+            <p class="modal-hint">Full path to ffmpeg, or just <code>ffmpeg</code> if it's on your PATH.</p>
+          </div>
+          <div class="settings-field">
+            <label class="modal-label">ffprobe Path</label>
+            <input id="settings-ffprobe" type="text" class="modal-input" placeholder="ffprobe" />
+            <p class="modal-hint">Full path to ffprobe, or just <code>ffprobe</code> if it's on your PATH.</p>
+          </div>
+          <div class="settings-field">
+            <label class="modal-label">Port</label>
+            <input id="settings-port" type="text" class="modal-input settings-readonly" readonly />
+            <p class="modal-hint">Set in <code>config.json</code>. Requires a server restart to change.</p>
+          </div>
+        </div>
+
+        <!-- Video tab -->
+        <div id="stab-video" class="settings-tab-content">
+          <div class="settings-field">
+            <label class="modal-label">Output Codec</label>
+            <div class="codec-radio-group" id="settings-output-codec">
+              <label class="codec-radio-btn">
+                <input type="radio" name="output_codec" value="hevc" />
+                <span class="codec-radio-label">
+                  <strong>HEVC / H.265</strong>
+                  <span class="codec-radio-sub">Best compatibility. Hardware decode on all modern GPUs and smart TVs.</span>
+                </span>
+              </label>
+              <label class="codec-radio-btn">
+                <input type="radio" name="output_codec" value="av1" />
+                <span class="codec-radio-label">
+                  <strong>AV1</strong>
+                  <span class="codec-radio-sub">Better compression. Encode requires RTX 40xx+, Intel Arc / 12th gen+, or RX 7000+. Playback requires newer devices.</span>
+                </span>
+              </label>
+              <label class="codec-radio-btn">
+                <input type="radio" name="output_codec" value="h264" />
+                <span class="codec-radio-label">
+                  <strong>H.264 / AVC</strong>
+                  <span class="codec-radio-sub">Universal compatibility. Larger files than HEVC at equal quality.</span>
+                </span>
+              </label>
+            </div>
+          </div>
+          <div class="settings-field">
+            <label class="modal-label">Quality (CQ / QP) <span id="settings-cq-display" class="settings-cq-display">24</span></label>
+            <input id="settings-cq" type="range" class="settings-range" min="0" max="51" step="1" value="24" />
+            <div class="settings-range-labels"><span>0 — Best quality</span><span>51 — Smallest file</span></div>
+            <p class="modal-hint">18–28 is the typical range. Lower = better quality, larger file. Default: 24.</p>
+          </div>
+        </div>
+
+        <!-- Audio tab -->
+        <div id="stab-audio" class="settings-tab-content">
+          <div class="settings-field">
+            <label class="modal-label">Lossy Track Handling</label>
+            <select id="settings-audio-action" class="modal-input">
+              <option value="opus">Re-encode to Opus — best quality/size, 320k 5.1 / 192k stereo</option>
+              <option value="aac">Re-encode to AAC — broad compatibility, 256k 5.1 / 160k stereo</option>
+              <option value="copy">Copy original — keep all audio streams unchanged</option>
+            </select>
+            <p class="modal-hint">Applies to lossy tracks (EAC3, AC3, DTS, AAC, MP3). Lossless tracks (TrueHD, DTS-HD MA, FLAC, PCM) are always copied regardless.</p>
+          </div>
+          <div class="settings-field">
+            <label class="modal-label">Keep Audio Languages</label>
+            <div class="lang-chips-container">
+              <label class="lang-chip lang-chip-all">
+                <input type="checkbox" id="settings-lang-all" />
+                <span>All Languages</span>
+              </label>
+              <div id="settings-lang-chips" class="lang-chips">
+                <label class="lang-chip"><input type="checkbox" value="eng" /><span>EN</span></label>
+                <label class="lang-chip"><input type="checkbox" value="jpn" /><span>JA</span></label>
+                <label class="lang-chip"><input type="checkbox" value="fre" /><span>FR</span></label>
+                <label class="lang-chip"><input type="checkbox" value="ger" /><span>DE</span></label>
+                <label class="lang-chip"><input type="checkbox" value="spa" /><span>ES</span></label>
+                <label class="lang-chip"><input type="checkbox" value="chi" /><span>ZH</span></label>
+                <label class="lang-chip"><input type="checkbox" value="ita" /><span>IT</span></label>
+                <label class="lang-chip"><input type="checkbox" value="por" /><span>PT</span></label>
+                <label class="lang-chip"><input type="checkbox" value="kor" /><span>KO</span></label>
+                <label class="lang-chip"><input type="checkbox" value="rus" /><span>RU</span></label>
+                <label class="lang-chip"><input type="checkbox" value="ara" /><span>AR</span></label>
+                <label class="lang-chip"><input type="checkbox" value="hin" /><span>HI</span></label>
+              </div>
+            </div>
+            <p class="modal-hint">Audio and subtitle tracks for these languages are included in the output. If no match is found, the first audio track is kept as a fallback.</p>
+          </div>
+        </div>
+
+        <!-- Flagging tab -->
+        <div id="stab-flagging" class="settings-tab-content">
+          <div class="settings-field">
+            <label class="modal-label">High Bitrate Threshold (kbps)</label>
+            <input id="settings-threshold" type="number" class="modal-input" min="1000" step="1000" placeholder="25000" />
+            <p class="modal-hint">Files above this bitrate are flagged for optimization. Default: 25000 kbps (25 Mbps). Takes effect on future scans — rescan folders to re-evaluate existing files.</p>
+          </div>
+          <div class="settings-field">
+            <div class="settings-toggle-row">
+              <span>
+                <span class="modal-label" style="display:inline">Flag AV1 files for optimization</span>
+                <p class="modal-hint" style="margin-top:4px">Disable if AV1 is your preferred output codec or your devices support AV1 natively. Takes effect immediately — no rescan needed.</p>
+              </span>
+              <label class="toggle-switch">
+                <input type="checkbox" id="settings-flag-av1" />
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Network tab -->
+        <div id="stab-network" class="settings-tab-content">
+          <div class="settings-field">
+            <div class="settings-toggle-row">
+              <span>
+                <span class="modal-label" style="display:inline">Enable Web UI</span>
+                <p class="modal-hint" style="margin-top:4px">Allow other devices on your network to access the interface via a browser. Requires a restart to apply.</p>
+              </span>
+              <label class="toggle-switch">
+                <input type="checkbox" id="settings-web-ui-enabled" />
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              </label>
+            </div>
+          </div>
+          <div id="settings-network-fields">
+            <div class="settings-field">
+              <label class="modal-label">Bind Address</label>
+              <input id="settings-web-ui-host" type="text" class="modal-input" placeholder="0.0.0.0" />
+              <p class="modal-hint">IP address to listen on. Use <code>0.0.0.0</code> for all interfaces, or a specific IP to restrict access.</p>
+            </div>
+            <div class="settings-field">
+              <label class="modal-label">Web UI Port</label>
+              <input id="settings-web-ui-port" type="number" class="modal-input" min="1" max="65535" placeholder="8000" />
+              <p class="modal-hint">Port that network clients will connect to. Default: 8000. Requires a restart to apply.</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+      <div class="settings-modal-footer">
+        <div class="settings-feedback">
+          <div id="settings-error" class="modal-error hidden"></div>
+          <div id="settings-success" class="settings-success hidden">Settings saved.</div>
+          <div id="settings-restart-note" class="settings-restart-note hidden">Restart the application to apply network changes.</div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-cancel" data-modal="settings-modal">Cancel</button>
+          <button id="settings-save-btn" class="btn-confirm">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- About Modal -->
+  <div id="about-modal" class="modal-overlay hidden">
+    <div class="modal modal-wide modal-about">
+      <div class="modal-header">
+        <span class="modal-title">About Conduit</span>
+        <button class="modal-close" data-modal="about-modal">&#x2715;</button>
+      </div>
+      <div id="about-body" class="modal-body about-body"></div>
+      <div class="modal-footer">
+        <button class="btn-cancel" data-modal="about-modal">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Flag reason popover -->
+  <div id="flag-popover" class="flag-popover hidden">
+    <div class="flag-popover-title">Why flagged?</div>
+    <div id="flag-popover-content" class="flag-popover-content"></div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
