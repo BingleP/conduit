@@ -41,6 +41,7 @@ const state = {
   _loadedNetworkSettings: null,
   flaggedFiles: [],
   openFileId: null,
+  bitrateThreshold: 25000,
 };
 
 // ---------------------------------------------------------------------------
@@ -365,7 +366,7 @@ function getFlagReasons(file) {
   const reasons = [];
   if (file.video_codec === 'h264' && file.pix_fmt && file.pix_fmt.includes('10')) reasons.push('hi10p');
   if (file.video_codec === 'av1') reasons.push('av1');
-  if (file.bitrate_kbps > 25000) reasons.push('bitrate');
+  if (file.bitrate_kbps > state.bitrateThreshold) reasons.push('bitrate');
   return reasons;
 }
 
@@ -1934,6 +1935,7 @@ async function openSettingsModal() {
     DOM.settingsAudioNormalize.checked = s.audio_normalize || false;
 
     DOM.settingsThreshold.value = s.needs_optimize_bitrate_threshold_kbps || '';
+    state.bitrateThreshold = s.needs_optimize_bitrate_threshold_kbps || 25000;
     DOM.settingsFlagAv1.checked = s.flag_av1 !== false;
 
     DOM.settingsWebUiEnabled.checked = s.web_ui_enabled || false;
@@ -2017,6 +2019,9 @@ async function saveSettings() {
     if (webUiUsername && webUiPassword) {
       localStorage.setItem('settings-web-ui-username', webUiUsername);
       localStorage.setItem('settings-web-ui-password', webUiPassword);
+    } else {
+      localStorage.removeItem('settings-web-ui-username');
+      localStorage.removeItem('settings-web-ui-password');
     }
 
     // Detect if any network settings actually changed
@@ -2027,6 +2032,7 @@ async function saveSettings() {
       || webUiUsername !== prev.username
       || webUiPassword !== prev.password;
 
+    if (!isNaN(threshold)) state.bitrateThreshold = threshold;
     fetchFlaggedFiles();
     fetchFiles();
     DOM.settingsSuccess.classList.remove('hidden');
@@ -2384,6 +2390,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('pe-cq').addEventListener('input', () => { $('pe-cq-display').textContent = $('pe-cq').value; });
 
   loadFiltersFromStorage();
+
+  GET('/api/settings').then(s => {
+    if (s?.needs_optimize_bitrate_threshold_kbps) {
+      state.bitrateThreshold = s.needs_optimize_bitrate_threshold_kbps;
+    }
+  }).catch(() => {});
 
   await fetchFolders();
   await fetchFiles();

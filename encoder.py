@@ -732,19 +732,6 @@ def startup_cleanup():
                     os.remove(orphan)
                 except Exception:
                     pass
-        # Also check common optimized suffixes
-        for suffix in (".optimized.mkv", ".optimized.webm", ".optimized.mp4"):
-            orphan = base + suffix
-            if os.path.exists(orphan):
-                try:
-                    # Optimized files are keep_original=True, so they aren't "orphans" 
-                    # in the same way, but if they are partial from a crash, they should be cleaned.
-                    # However, if the job is now 'error', they are definitely partial.
-                    # We'll just clean them to be safe if they exist and aren't the main 'path'.
-                    if orphan != path:
-                        os.remove(orphan)
-                except Exception:
-                    pass
 
 
 def start_encoder_thread(ffmpeg_path: str):
