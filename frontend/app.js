@@ -142,6 +142,7 @@ function initDOM() {
   DOM.collisionList         = $('collision-list');
   DOM.collisionCancelBtn    = $('collision-cancel-btn');
   DOM.collisionConfirmBtn   = $('collision-confirm-btn');
+  // CE HDR handling
   DOM.ceHdrSection          = $('ce-hdr-section');
   DOM.ceHdrCount            = $('ce-hdr-count');
   DOM.ceHdrFiles            = $('ce-hdr-files');
@@ -152,9 +153,10 @@ function initDOM() {
   DOM.ceSubmitBtn           = $('ce-submit-btn');
   DOM.ceError               = $('ce-error');
 
-  DOM.settingsBtn       = $('settings-btn');
-  DOM.settingsModal     = $('settings-modal');
+  DOM.settingsBtn           = $('settings-btn');
+  DOM.settingsModal         = $('settings-modal');
   DOM.settingsHwEncoder      = $('settings-hw-encoder');
+  DOM.settingsVaapiDevice    = $('settings-vaapi-device');
   DOM.settingsFfmpeg         = $('settings-ffmpeg');
   DOM.settingsFfprobe        = $('settings-ffprobe');
   DOM.settingsOutputCodec    = $('settings-output-codec');
@@ -179,6 +181,8 @@ function initDOM() {
   DOM.settingsWebUiEnabled   = $('settings-web-ui-enabled');
   DOM.settingsWebUiHost      = $('settings-web-ui-host');
   DOM.settingsWebUiPort      = $('settings-web-ui-port');
+  DOM.settingsWebUiUsername  = $('settings-web-ui-username');
+  DOM.settingsWebUiPassword  = $('settings-web-ui-password');
   DOM.settingsNetworkFields  = $('settings-network-fields');
 
   DOM.aboutBtn   = $('about-btn');
@@ -192,16 +196,35 @@ function initDOM() {
 // API helpers
 // ---------------------------------------------------------------------------
 
+function getAuthHeader() {
+  const user = localStorage.getItem('settings-web-ui-username');
+  const pass = localStorage.getItem('settings-web-ui-password');
+  if (user && pass) {
+    return { 'Authorization': 'Basic ' + btoa(user + ':' + pass) };
+  }
+  return {};
+}
+
 async function api(method, path, body) {
   const opts = {
     method,
-    headers: {},
+    headers: { ...getAuthHeader() },
   };
   if (body !== undefined) {
     opts.headers['Content-Type'] = 'application/json';
     opts.body = JSON.stringify(body);
   }
   const res = await fetch(path, opts);
+  if (res.status === 401) {
+    const user = prompt('Enter Web UI Username:');
+    const pass = prompt('Enter Web UI Password:');
+    if (user && pass) {
+      localStorage.setItem('settings-web-ui-username', user);
+      localStorage.setItem('settings-web-ui-password', pass);
+      return api(method, path, body); // retry
+    }
+    throw new Error('Unauthorized');
+  }
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
     try { detail = (await res.json()).detail || detail; } catch {}
@@ -213,6 +236,7 @@ async function api(method, path, body) {
 
 const GET    = path       => api('GET',    path);
 const POST   = (path, b)  => api('POST',   path, b);
+const PUT    = (path, b)  => api('PUT',    path, b);
 const DELETE = path       => api('DELETE', path);
 
 const escHtml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -458,7 +482,6 @@ function renderSidebar() {
         <div class="folder-name" title="${folder.path}">${shortenPath(folder.path)}</div>
         <div class="folder-meta"><span>${folder.file_count} files</span><span>${fmtSize(folder.total_size || 0)}</span></div>
       </div>
-      <span class="folder-count" style="display:none">${folder.file_count}</span>
       <span class="folder-actions">
         <button class="folder-action-btn scan-btn" title="Scan folder" data-id="${folder.id}">
           <svg viewBox="0 0 24 24" fill="none">
@@ -500,7 +523,6 @@ function renderSidebar() {
 function syncFolderFilterDropdown() {
   const sel = DOM.filterFolder;
   const current = sel.value;
-  // Remove all options except "All Folders"
   while (sel.options.length > 1) sel.remove(1);
   for (const f of state.folders) {
     const opt = document.createElement('option');
@@ -568,7 +590,6 @@ function renderTable() {
   const tbody = DOM.fileTbody;
   tbody.innerHTML = '';
 
-  // Update count label
   const { offset, limit } = state.pagination;
   const from = state.totalFiles === 0 ? 0 : offset + 1;
   const to   = Math.min(offset + limit, state.totalFiles);
@@ -600,7 +621,6 @@ function buildFileRow(file) {
   const isSelected = state.selectedIds.has(file.id);
   if (isSelected) tr.classList.add('selected');
 
-  // Audio tracks — one row per track: [LANG] CODEC · CH
   let audioHtml = '<div class="audio-cell">';
   try {
     const tracks = JSON.parse(file.audio_tracks || '[]');
@@ -621,7 +641,6 @@ function buildFileRow(file) {
   } catch {}
   audioHtml += '</div>';
 
-  // Subtitle badges
   let subHtml = '<div class="sub-cell">';
   try {
     const subs = JSON.parse(file.subtitle_tracks || '[]');
@@ -637,7 +656,6 @@ function buildFileRow(file) {
   } catch {}
   subHtml += '</div>';
 
-  // Optimize flag
   const optHtml = file.needs_optimize
     ? `<button class="opt-flag opt-flag-yes flag-popover-trigger" title="Click to see why flagged">
          <svg viewBox="0 0 24 24" fill="none"><path d="M13 10V3L4 14h7v7l9-11h-7z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
@@ -661,7 +679,6 @@ function buildFileRow(file) {
     <td class="col-opt">${optHtml}</td>
   `;
 
-  // Click row (not checkbox) to open detail drawer; flag button shows popover
   tr.addEventListener('click', e => {
     if (e.target.type === 'checkbox') return;
     const flagBtn = e.target.closest('.flag-popover-trigger');
@@ -819,7 +836,6 @@ function bindSelectAll() {
     } else {
       state.files.forEach(f => state.selectedIds.delete(f.id));
     }
-    // Re-render to apply checkboxes
     renderTable();
   });
 }
@@ -838,7 +854,6 @@ function handleOptimize() {
   state._pendingHdrFileIds    = hdrFiles.map(f => f.id);
   state._pendingNonHdrFileIds = normalFiles.map(f => f.id);
 
-  // Show keep/replace confirmation first, then HDR modal if needed
   const count = selectedFiles.length;
   DOM.optimizeConfirmCount.textContent = `${count} file${count !== 1 ? 's' : ''}`;
   openModal('optimize-confirm-modal');
@@ -870,7 +885,7 @@ async function _populatePresetSelector() {
 }
 
 async function loadPresetsTab() {
-  _presetsCache = null; // force reload
+  _presetsCache = null;
   const presets = await _loadPresets();
   const list = $('presets-list');
   list.innerHTML = '';
@@ -959,9 +974,7 @@ async function _savePreset() {
 
   try {
     if (editingId) {
-      await fetch(`/api/presets/${editingId}`, {
-        method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload),
-      }).then(r => { if (!r.ok) throw new Error(); });
+      await PUT(`/api/presets/${editingId}`, payload);
     } else {
       await POST('/api/presets', payload);
     }
@@ -975,7 +988,7 @@ async function _savePreset() {
 async function _deletePreset(id) {
   if (!confirm('Delete this preset?')) return;
   try {
-    await fetch(`/api/presets/${id}`, { method: 'DELETE' });
+    await DELETE(`/api/presets/${id}`);
     loadPresetsTab();
   } catch (e) {
     alert('Failed to delete preset.');
@@ -989,10 +1002,8 @@ async function handleCustomEncode() {
   const count = selectedFiles.length;
   DOM.customEncodeCount.textContent = `${count} file${count !== 1 ? 's' : ''}`;
 
-  // Load presets into selector
   await _populatePresetSelector();
 
-  // Pre-fill from current global settings
   try {
     const s = await GET('/api/settings');
     _ceApplySettings({
@@ -1008,11 +1019,10 @@ async function handleCustomEncode() {
       force_stereo:       s.force_stereo        || false,
       audio_normalize:    s.audio_normalize     || false,
     });
-  } catch (_) { /* use current defaults */ }
+  } catch (_) {}
 
-  DOM.cePreset.value = ''; // reset preset selector
+  DOM.cePreset.value = '';
 
-  // Show HDR section only if HDR files are selected
   const hdrFiles = selectedFiles.filter(f => f.hdr_type === 'hdr10plus' || f.hdr_type === 'dolby_vision');
   if (hdrFiles.length > 0) {
     DOM.ceHdrSection.classList.remove('hidden');
@@ -1054,7 +1064,7 @@ function _ceSetKeepOriginal(keep) {
 }
 
 function _ceSetHdrAction(action) {
-  state._ceHdrAction = action; // 'remux' | 'reencode'
+  state._ceHdrAction = action;
   DOM.ceHdrRemuxBtn.classList.toggle('ce-hdr-choice-active', action === 'remux');
   DOM.ceHdrReencodeBtn.classList.toggle('ce-hdr-choice-active', action === 'reencode');
 }
@@ -1064,7 +1074,6 @@ function _ceSetOutputDir(dir) {
   if (dir) {
     DOM.ceOutputDir.value = dir;
     DOM.ceClearDirBtn.classList.remove('hidden');
-    // Hide keep/replace choice — output dir implies original is always kept
     DOM.ceAfterSection.style.display = 'none';
   } else {
     DOM.ceOutputDir.value = '';
@@ -1074,7 +1083,6 @@ function _ceSetOutputDir(dir) {
 }
 
 function _detectOutputDirCollisions(files) {
-  // Returns groups of files that share the same output stem (and would overwrite each other)
   const stems = {};
   for (const f of files) {
     const stem = f.filename.replace(/\.[^/.]+$/, '');
@@ -1094,7 +1102,6 @@ function _showCollisionWarning(collisions, outputDir, onConfirm) {
       </ul>
     </div>`).join('');
 
-  // Wire confirm once
   const onConfirmClick = () => {
     DOM.collisionConfirmBtn.removeEventListener('click', onConfirmClick);
     closeModal('collision-modal');
@@ -1117,7 +1124,6 @@ async function _submitCustomEncode() {
     return;
   }
 
-  // Check for output filename collisions before doing anything irreversible
   if (state._ceOutputDir) {
     const collisions = _detectOutputDirCollisions(selectedFiles);
     if (collisions.length > 0) {
@@ -1125,7 +1131,7 @@ async function _submitCustomEncode() {
         closeModal('custom-encode-modal');
         _doSubmitCustomEncode(selectedFiles);
       });
-      return; // wait for user decision
+      return;
     }
   }
 
@@ -1179,7 +1185,6 @@ function showHdrModal(hdrFiles) {
   openModal('hdr-modal');
 }
 
-
 async function submitJobs(fileIds, jobType, keepOriginal = false, encodeOverrides = null) {
   if (!fileIds.length) return;
   try {
@@ -1198,11 +1203,10 @@ async function submitJobs(fileIds, jobType, keepOriginal = false, encodeOverride
       if (encodeOverrides.audio_normalize != null) payload.audio_normalize = encodeOverrides.audio_normalize;
       if (encodeOverrides.output_dir)              payload.output_dir      = encodeOverrides.output_dir;
     }
-    const result = await POST('/api/jobs', payload);
+    await POST('/api/jobs', payload);
     state.selectedIds.clear();
     renderTable();
     openQueuePanel();
-    // Refresh queue
     const jobs = await GET('/api/jobs');
     state.jobs = jobs;
     renderQueue();
@@ -1266,27 +1270,23 @@ function closeModal(id) {
 }
 
 function bindModals() {
-  // Close buttons
   document.querySelectorAll('.modal-close, .btn-cancel').forEach(btn => {
     const modalId = btn.dataset.modal;
     if (modalId) btn.addEventListener('click', () => closeModal(modalId));
   });
 
-  // Click outside to close
   document.querySelectorAll('.modal-overlay').forEach(overlay => {
     overlay.addEventListener('click', e => {
       if (e.target === overlay) closeModal(overlay.id);
     });
   });
 
-  // Escape key — close only the topmost modal
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && _modalStack.length > 0) {
       closeModal(_modalStack[_modalStack.length - 1]);
     }
   });
 
-  // Add folder
   DOM.addFolderBtn.addEventListener('click', () => {
     hideModalError('add-folder-modal');
     DOM.folderPathInput.value = '';
@@ -1326,7 +1326,6 @@ function initResizableColumns() {
   const cols  = table.querySelectorAll('colgroup col');
   const ths   = table.querySelectorAll('thead th');
 
-  // Seed col widths from rendered th widths, then override with saved widths
   ths.forEach((th, i) => {
     cols[i].style.width = th.offsetWidth + 'px';
   });
@@ -1363,7 +1362,6 @@ function renderQueue() {
   const jobs = state.jobs;
   const activeJobs = jobs.filter(j => j.status === 'queued' || j.status === 'running');
 
-  // Count badge
   if (activeJobs.length > 0) {
     DOM.queueCountBadge.textContent = activeJobs.length;
     DOM.queueCountBadge.classList.remove('hidden');
@@ -1375,7 +1373,7 @@ function renderQueue() {
   list.innerHTML = '';
 
   for (const job of jobs) {
-    if (job.status === 'running') continue; // shown in progress section
+    if (job.status === 'running') continue;
     const row = document.createElement('div');
     row.className = 'queue-job-row';
 
@@ -1444,7 +1442,6 @@ function renderFlaggedPanel() {
     DOM.flaggedCountBadge.classList.add('hidden');
   }
 
-  // Breakdown by reason
   const counts = { hi10p: 0, av1: 0, bitrate: 0 };
   for (const f of files) {
     for (const r of getFlagReasons(f)) counts[r] = (counts[r] || 0) + 1;
@@ -1466,7 +1463,6 @@ function renderFlaggedPanel() {
     });
   }
 
-  // File list
   const list = DOM.flaggedList;
   list.innerHTML = '';
   for (const file of files) {
@@ -1528,7 +1524,6 @@ function loadFiltersFromStorage() {
     if (saved.search)  state.search = saved.search;
     if (saved.sort)    Object.assign(state.sort, saved.sort);
 
-    // Sync UI inputs
     DOM.filterFolder.value      = state.filters.folder_id;
     DOM.filterRes.value         = state.filters.resolution;
     DOM.filterCodec.value       = state.filters.codec;
@@ -1564,7 +1559,6 @@ function openFileDetail(file) {
   DOM.drawerFilename.textContent = file.filename;
   DOM.drawerBody.innerHTML = renderFileDetailHtml(file);
 
-  // Optimize button
   if (file.needs_optimize) {
     DOM.drawerOptimizeBtn.classList.remove('hidden');
     DOM.drawerOptimizeBtn.onclick = () => {
@@ -1590,7 +1584,6 @@ function renderFileDetailHtml(file) {
 
   let html = '';
 
-  // File section
   html += `<div class="detail-section"><div class="detail-section-title">File</div>`;
   html += row('Path', file.path || file.folder_path, 'path');
   html += row('Size', fmtSize(file.size_bytes));
@@ -1598,7 +1591,6 @@ function renderFileDetailHtml(file) {
   html += row('Bitrate', fmtBitrate(file.bitrate_kbps));
   html += `</div>`;
 
-  // Video section
   html += `<div class="detail-section"><div class="detail-section-title">Video</div>`;
   html += row('Codec', codecLabel(file.video_codec));
   html += row('Profile', file.video_profile);
@@ -1609,7 +1601,6 @@ function renderFileDetailHtml(file) {
   html += row('Transfer', file.color_transfer);
   html += `</div>`;
 
-  // Audio section
   try {
     const tracks = JSON.parse(file.audio_tracks || '[]');
     if (tracks.length > 0) {
@@ -1629,7 +1620,6 @@ function renderFileDetailHtml(file) {
     }
   } catch {}
 
-  // Subtitles section
   try {
     const subs = JSON.parse(file.subtitle_tracks || '[]');
     if (subs.length > 0) {
@@ -1644,7 +1634,6 @@ function renderFileDetailHtml(file) {
     }
   } catch {}
 
-  // Other
   html += `<div class="detail-section"><div class="detail-section-title">Other</div>`;
   html += row('Attachments', file.has_attachments ? 'Yes (fonts/covers)' : 'None');
   html += row('Scanned', file.scanned_at ? new Date(file.scanned_at + 'Z').toLocaleString() : '—');
@@ -1786,19 +1775,17 @@ function connectSSE() {
 
   es.addEventListener('done', e => {
     renderProgress(null);
-    fetchFolders(); // refresh file counts
+    fetchFolders();
     fetchFiles();
     fetchFlaggedFiles();
   });
 
   es.addEventListener('error', e => {
-    // On SSE error, auto-reconnects; just hide progress if no data
     if (es.readyState === EventSource.CLOSED) {
       setTimeout(connectSSE, 3000);
     }
   });
 
-  // Fallback: poll queue every 2 seconds via REST for queue sync
   setInterval(async () => {
     try {
       const jobs = await GET('/api/jobs');
@@ -1823,17 +1810,15 @@ function renderProgress(p) {
   DOM.progressSpeed.textContent = p.speed || '0x';
   DOM.progressEta.textContent = 'ETA ' + fmtEta(p.eta_s);
 
-  // Auto-expand queue panel when encoding
   if (p.status === 'running' && !DOM.queuePanel.classList.contains('expanded')) {
     openQueuePanel();
   }
 
-  // Log polling
   if (p.status === 'running') {
     startLogPolling();
   } else {
     stopLogPolling();
-    fetchLog(); // final fetch to capture tail of log
+    fetchLog();
   }
 }
 
@@ -1866,7 +1851,6 @@ async function pollScanStatus() {
       if (scanPollTimer) {
         clearInterval(scanPollTimer);
         scanPollTimer = null;
-        // Refresh after scan completes
         await fetchFolders();
         applyFilters();
         fetchFlaggedFiles();
@@ -1877,10 +1861,6 @@ async function pollScanStatus() {
 
 // ---------------------------------------------------------------------------
 // Settings modal
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Settings modal — language chip helpers
 // ---------------------------------------------------------------------------
 
 function _langChipSetDisabled(disabled) {
@@ -1918,10 +1898,6 @@ function _getSelectedLanguages() {
   return langs;
 }
 
-// ---------------------------------------------------------------------------
-// Settings modal — open / save
-// ---------------------------------------------------------------------------
-
 async function openSettingsModal() {
   DOM.settingsError.classList.add('hidden');
   DOM.settingsSuccess.classList.add('hidden');
@@ -1930,45 +1906,40 @@ async function openSettingsModal() {
   try {
     const s = await GET('/api/settings');
     DOM.settingsHwEncoder.value = s.hw_encoder || 'nvenc';
+    DOM.settingsVaapiDevice.value = s.vaapi_device || '';
     DOM.settingsFfmpeg.value    = s.ffmpeg_path || '';
     DOM.settingsFfprobe.value   = s.ffprobe_path || '';
 
-    // Video codec radio
     const codec = s.output_video_codec || 'hevc';
     DOM.settingsOutputCodec.querySelectorAll('input[type="radio"]').forEach(r => {
       r.checked = r.value === codec;
     });
 
-    // CQ slider
     const cq = s.video_quality_cq ?? 24;
     DOM.settingsCq.value = cq;
     DOM.settingsCqDisplay.textContent = cq;
 
-    // Video tab extras
     DOM.settingsOutputContainer.value = s.output_container || 'mkv';
     DOM.settingsScaleHeight.value     = s.scale_height ? String(s.scale_height) : '0';
     DOM.settingsPixFmt.value          = s.pix_fmt || 'auto';
     DOM.settingsEncoderSpeed.value    = s.encoder_speed || 'medium';
     DOM.settingsSubtitleMode.value    = s.subtitle_mode || 'copy';
 
-    // Audio action
     DOM.settingsAudioAction.value = s.audio_lossy_action || 'opus';
 
-    // Language chips
     _loadLangChips(s.audio_languages);
 
-    // Audio extras
     DOM.settingsForceStereo.checked    = s.force_stereo || false;
     DOM.settingsAudioNormalize.checked = s.audio_normalize || false;
 
     DOM.settingsThreshold.value = s.needs_optimize_bitrate_threshold_kbps || '';
     DOM.settingsFlagAv1.checked = s.flag_av1 !== false;
 
-
-    // Network tab
     DOM.settingsWebUiEnabled.checked = s.web_ui_enabled || false;
     DOM.settingsWebUiHost.value      = s.web_ui_host || '0.0.0.0';
     DOM.settingsWebUiPort.value      = s.web_ui_port || 8000;
+    DOM.settingsWebUiUsername.value  = localStorage.getItem('settings-web-ui-username') || '';
+    DOM.settingsWebUiPassword.value  = localStorage.getItem('settings-web-ui-password') || '';
     _updateNetworkFieldVisibility();
   } catch (e) {
     DOM.settingsError.textContent = 'Failed to load settings: ' + e.message;
@@ -2004,11 +1975,14 @@ async function saveSettings() {
   }
 
   const webUiPort = parseInt(DOM.settingsWebUiPort.value, 10);
+  const webUiUsername = DOM.settingsWebUiUsername.value.trim();
+  const webUiPassword = DOM.settingsWebUiPassword.value;
 
   try {
     const scaleHeightRaw = parseInt(DOM.settingsScaleHeight.value, 10);
     await POST('/api/settings', {
       hw_encoder:          DOM.settingsHwEncoder.value || null,
+      vaapi_device:        DOM.settingsVaapiDevice.value.trim() || null,
       ffmpeg_path:         DOM.settingsFfmpeg.value.trim() || null,
       ffprobe_path:        DOM.settingsFfprobe.value.trim() || null,
       output_video_codec:  selectedCodec ? selectedCodec.value : null,
@@ -2027,12 +2001,19 @@ async function saveSettings() {
       web_ui_enabled:      DOM.settingsWebUiEnabled.checked,
       web_ui_host:         DOM.settingsWebUiHost.value.trim() || null,
       web_ui_port:         isNaN(webUiPort) ? null : webUiPort,
+      web_ui_username:     webUiUsername || null,
+      web_ui_password:     webUiPassword || null,
     });
+
+    if (webUiUsername && webUiPassword) {
+      localStorage.setItem('settings-web-ui-username', webUiUsername);
+      localStorage.setItem('settings-web-ui-password', webUiPassword);
+    }
+
     fetchFlaggedFiles();
     fetchFiles();
     DOM.settingsSuccess.classList.remove('hidden');
     setTimeout(() => DOM.settingsSuccess.classList.add('hidden'), 3000);
-    // Show restart note since network changes require a restart
     DOM.settingsRestartNote.classList.remove('hidden');
     setTimeout(() => DOM.settingsRestartNote.classList.add('hidden'), 6000);
   } catch (e) {
@@ -2053,10 +2034,6 @@ function switchSettingsTab(tab) {
   if (tab === 'database') loadOptimizedFiles();
   if (tab === 'presets')  loadPresetsTab();
 }
-
-// ---------------------------------------------------------------------------
-// Database tab — optimized files list
-// ---------------------------------------------------------------------------
 
 async function loadOptimizedFiles() {
   const list = $('db-optimized-list');
@@ -2101,7 +2078,6 @@ async function reflagFile(fileId, btn) {
   try {
     await POST(`/api/files/${fileId}/reflag`, {});
     if (btn) { btn.textContent = 'Flagged'; btn.classList.add('btn-db-reflag-active'); }
-    // Update main file list if visible
     const f = state.files.find(f => f.id === fileId);
     if (f) { f.needs_optimize = 1; renderTable(); }
     fetchFlaggedFiles();
@@ -2122,33 +2098,28 @@ function bindSettingsModal() {
   DOM.settingsBtn.addEventListener('click', openSettingsModal);
   DOM.settingsSaveBtn.addEventListener('click', saveSettings);
 
-  // Tab switching
   document.querySelectorAll('.settings-tab').forEach(btn => {
     btn.addEventListener('click', () => switchSettingsTab(btn.dataset.stab));
   });
 
-  // CQ slider live display
   DOM.settingsCq.addEventListener('input', () => {
     DOM.settingsCqDisplay.textContent = DOM.settingsCq.value;
   });
 
-  // Web UI toggle shows/hides host+port fields
   DOM.settingsWebUiEnabled.addEventListener('change', _updateNetworkFieldVisibility);
 
-  // "All Languages" toggle disables/enables chips
   DOM.settingsLangAll.addEventListener('change', () => {
     _langChipSetDisabled(DOM.settingsLangAll.checked);
     _syncLangChipClasses();
   });
 
-  // Per-chip class sync
   DOM.settingsLangChips.querySelectorAll('input').forEach(cb => {
     cb.addEventListener('change', _syncLangChipClasses);
   });
 }
 
 // ---------------------------------------------------------------------------
-// About modal — dynamic content from current settings
+// About modal
 // ---------------------------------------------------------------------------
 
 const _ABOUT_HW_NAMES  = { nvenc: 'NVIDIA NVENC', qsv: 'Intel Quick Sync', amf: 'AMD AMF', vaapi: 'VA-API', software: 'Software (CPU)' };
@@ -2190,14 +2161,12 @@ function renderAboutHtml(s) {
     ? 'all languages'
     : langs.map(l => _ABOUT_LANG_NAMES[l] || l.toUpperCase()).join(', ');
 
-  // Per-encoder quality description
   const qualDesc = codec === 'vp9'   ? `CQ ${cq} (libvpx-vp9 — CPU encode regardless of hardware setting)`
                  : hw === 'nvenc'    ? `VBR CQ ${cq}, preset p4`
                  : hw === 'qsv'      ? `global_quality ${cq}, look-ahead enabled`
                  : hw === 'software' ? `CRF ${cq}`
                  :                     `CQP ${cq}, balanced preset`;
 
-  // Video detail extras
   const scaleDesc    = scaleHeight ? `downscaled to <strong>${scaleHeight}p</strong> (aspect preserved)` : 'original resolution';
   const pixFmtDesc   = pixFmt !== 'auto' ? `, forced pixel format <code>${pixFmt}</code>` : '';
   const speedDesc    = `, encoder speed <strong>${encSpeed}</strong>`;
@@ -2205,17 +2174,14 @@ function renderAboutHtml(s) {
                       : container === 'webm' ? 'WebM'
                       :                        'MKV';
 
-  // Output path description
   const outputDesc = `Encoded to a temporary <code>.new.${container}</code> alongside the original by default. On success the original is deleted and the new file takes its place. If an output directory is set via the Encode modal, the file is written directly to that directory and the original is always kept.`;
 
-  // Audio lossy row
   const audioLossyVal = audioAct === 'copy'
     ? 'All audio tracks are <strong>copied without re-encoding</strong> regardless of codec.'
     : audioAct === 'aac'
     ? 'EAC3, AC3, DTS, AAC, and MP3 tracks are re-encoded to <strong>AAC</strong> — 256 kbps for 5.1/7.1, 160 kbps for stereo, 96 kbps for mono.'
     : 'EAC3, AC3, DTS, AAC, and MP3 tracks are re-encoded to <strong>Opus</strong> — 320 kbps for 5.1/7.1, 192 kbps for stereo, 96 kbps for mono. Smaller than AC3/EAC3 at equivalent or better quality.';
 
-  // AV1 flag row — dimmed when disabled
   const av1Style  = flagAv1 ? '' : 'opacity:0.45';
   const av1Status = flagAv1 ? '' : ' <em style="color:var(--text-muted)">(currently disabled — AV1 files will not be flagged)</em>';
 
@@ -2290,7 +2256,6 @@ function bindAboutModal() {
 document.addEventListener('DOMContentLoaded', async () => {
   initDOM();
 
-  // Bind HDR modal buttons now that DOM is ready
   DOM.hdrRemuxBtn.addEventListener('click', () => {
     closeModal('hdr-modal');
     const ko  = state._pendingKeepOriginal;
@@ -2318,7 +2283,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     state._pendingEncodeOverrides = null;
   });
 
-  // Bind optimize confirmation modal buttons
   DOM.optimizeReplaceBtn.addEventListener('click', () => {
     closeModal('optimize-confirm-modal');
     state._pendingKeepOriginal = false;
@@ -2341,7 +2305,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Close flag popover on outside click
   document.addEventListener('click', e => {
     if (!e.target.closest('#flag-popover') && !e.target.closest('.flag-popover-trigger')) {
       hideFlagPopover();
@@ -2365,11 +2328,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   DOM.drawerClose.addEventListener('click', closeFileDetail);
-
   DOM.optimizeBtn.addEventListener('click', handleOptimize);
   DOM.encodeBtn.addEventListener('click', handleCustomEncode);
 
-  // Custom encode modal bindings
   DOM.ceCq.addEventListener('input', () => { DOM.ceCqDisplay.textContent = DOM.ceCq.value; });
   DOM.ceReplaceBtn.addEventListener('click', () => _ceSetKeepOriginal(false));
   DOM.ceKeepBtn.addEventListener('click', () => _ceSetKeepOriginal(true));
@@ -2382,7 +2343,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       const dir = await window.pywebview.api.pick_folder();
       if (dir) _ceSetOutputDir(dir);
     } else {
-      // Web UI fallback: let user type a path
       const dir = prompt('Enter output folder path:');
       if (dir?.trim()) _ceSetOutputDir(dir.trim());
     }
@@ -2397,28 +2357,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (preset) _ceApplySettings(preset);
   });
 
-  // Preset editor bindings
   $('preset-new-btn').addEventListener('click', () => _openPresetEditor(null));
   $('pe-cancel-btn').addEventListener('click', () => $('preset-editor').classList.add('hidden'));
   $('pe-save-btn').addEventListener('click', _savePreset);
   $('pe-cq').addEventListener('input', () => { $('pe-cq-display').textContent = $('pe-cq').value; });
 
-  // Restore persisted filters/sort before fetching
   loadFiltersFromStorage();
 
-  // Initial data load
   await fetchFolders();
   await fetchFiles();
   fetchFlaggedFiles();
 
-  // Initialize resizable columns after table is rendered
   requestAnimationFrame(initResizableColumns);
-
-  // SSE for live encode progress
   connectSSE();
-
-  // Initial scan status check
   pollScanStatus();
-  // Always poll scan status every 2s to detect any external scans
   setInterval(pollScanStatus, 2000);
 });

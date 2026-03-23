@@ -4,10 +4,10 @@ import subprocess
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
-from database import get_db
+from database import db_session
 
 
 # ---------------------------------------------------------------------------
@@ -246,6 +246,8 @@ def scan_folder(folder_id: int, folder_path: str, ffprobe_path: str, threshold_k
     global _scan_status
 
     with _scan_lock:
+        if _scan_status.scanning:
+            return
         _scan_status = ScanStatus(
             scanning=True,
             started_at=time.time(),
@@ -257,88 +259,86 @@ def scan_folder(folder_id: int, folder_path: str, ffprobe_path: str, threshold_k
         with _scan_lock:
             _scan_status.total = len(files)
 
-        conn = get_db()
+        with db_session() as conn:
+            for i, file_path in enumerate(files):
+                with _scan_lock:
+                    _scan_status.current_file = os.path.basename(file_path)
+                    _scan_status.scanned = i
 
-        for i, file_path in enumerate(files):
-            with _scan_lock:
-                _scan_status.current_file = os.path.basename(file_path)
-                _scan_status.scanned = i
+                try:
+                    mtime = os.path.getmtime(file_path)
+                    filename = os.path.basename(file_path)
 
-            try:
-                mtime = os.path.getmtime(file_path)
-                filename = os.path.basename(file_path)
+                    # Check if already in DB with same mtime
+                    existing = conn.execute(
+                        "SELECT id, mtime FROM files WHERE path = ?", (file_path,)
+                    ).fetchone()
 
-                # Check if already in DB with same mtime
-                existing = conn.execute(
-                    "SELECT id, mtime FROM files WHERE path = ?", (file_path,)
-                ).fetchone()
+                    if existing and existing["mtime"] == mtime:
+                        # Up to date, skip ffprobe
+                        continue
 
-                if existing and existing["mtime"] == mtime:
-                    # Up to date, skip ffprobe
-                    continue
+                    probe = probe_file(ffprobe_path, file_path)
+                    if probe is None:
+                        with _scan_lock:
+                            _scan_status.errors += 1
+                        continue
 
-                probe = probe_file(ffprobe_path, file_path)
-                if probe is None:
+                    info = parse_probe(probe, file_path, threshold_kbps, flag_av1)
+                    now = datetime.now(timezone.utc).isoformat()
+
+                    if existing:
+                        conn.execute("""
+                            UPDATE files SET
+                                filename=?, size_bytes=?, duration_s=?, bitrate_kbps=?,
+                                video_codec=?, video_profile=?, pix_fmt=?, width=?, height=?,
+                                hdr_type=?, color_transfer=?, color_space=?,
+                                audio_tracks=?, subtitle_tracks=?, has_attachments=?,
+                                needs_optimize=?, scanned_at=?, mtime=?
+                            WHERE path=?
+                        """, (
+                            filename, info["size_bytes"], info["duration_s"], info["bitrate_kbps"],
+                            info["video_codec"], info["video_profile"], info["pix_fmt"],
+                            info["width"], info["height"],
+                            info["hdr_type"], info["color_transfer"], info["color_space"],
+                            info["audio_tracks"], info["subtitle_tracks"], info["has_attachments"],
+                            info["needs_optimize"], now, mtime,
+                            file_path,
+                        ))
+                    else:
+                        conn.execute("""
+                            INSERT INTO files (
+                                folder_id, path, filename, size_bytes, duration_s, bitrate_kbps,
+                                video_codec, video_profile, pix_fmt, width, height,
+                                hdr_type, color_transfer, color_space,
+                                audio_tracks, subtitle_tracks, has_attachments,
+                                needs_optimize, scanned_at, mtime
+                        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        """, (
+                            folder_id, file_path, filename,
+                            info["size_bytes"], info["duration_s"], info["bitrate_kbps"],
+                            info["video_codec"], info["video_profile"], info["pix_fmt"],
+                            info["width"], info["height"],
+                            info["hdr_type"], info["color_transfer"], info["color_space"],
+                            info["audio_tracks"], info["subtitle_tracks"], info["has_attachments"],
+                            info["needs_optimize"], now, mtime,
+                        ))
+
+                    conn.commit()
+
+                except Exception:
                     with _scan_lock:
                         _scan_status.errors += 1
-                    continue
 
-                info = parse_probe(probe, file_path, threshold_kbps, flag_av1)
-                now = datetime.utcnow().isoformat()
-
-                if existing:
-                    conn.execute("""
-                        UPDATE files SET
-                            filename=?, size_bytes=?, duration_s=?, bitrate_kbps=?,
-                            video_codec=?, video_profile=?, pix_fmt=?, width=?, height=?,
-                            hdr_type=?, color_transfer=?, color_space=?,
-                            audio_tracks=?, subtitle_tracks=?, has_attachments=?,
-                            needs_optimize=?, scanned_at=?, mtime=?
-                        WHERE path=?
-                    """, (
-                        filename, info["size_bytes"], info["duration_s"], info["bitrate_kbps"],
-                        info["video_codec"], info["video_profile"], info["pix_fmt"],
-                        info["width"], info["height"],
-                        info["hdr_type"], info["color_transfer"], info["color_space"],
-                        info["audio_tracks"], info["subtitle_tracks"], info["has_attachments"],
-                        info["needs_optimize"], now, mtime,
-                        file_path,
-                    ))
-                else:
-                    conn.execute("""
-                        INSERT INTO files (
-                            folder_id, path, filename, size_bytes, duration_s, bitrate_kbps,
-                            video_codec, video_profile, pix_fmt, width, height,
-                            hdr_type, color_transfer, color_space,
-                            audio_tracks, subtitle_tracks, has_attachments,
-                            needs_optimize, scanned_at, mtime
-                        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                    """, (
-                        folder_id, file_path, filename,
-                        info["size_bytes"], info["duration_s"], info["bitrate_kbps"],
-                        info["video_codec"], info["video_profile"], info["pix_fmt"],
-                        info["width"], info["height"],
-                        info["hdr_type"], info["color_transfer"], info["color_space"],
-                        info["audio_tracks"], info["subtitle_tracks"], info["has_attachments"],
-                        info["needs_optimize"], now, mtime,
-                    ))
-
-                conn.commit()
-
-            except Exception:
-                with _scan_lock:
-                    _scan_status.errors += 1
-
-        # Remove DB entries for files that no longer exist on disk
-        existing_paths = set(files)
-        db_files = conn.execute(
-            "SELECT id, path FROM files WHERE folder_id = ?", (folder_id,)
-        ).fetchall()
-        for row in db_files:
-            if row["path"] not in existing_paths:
-                conn.execute("DELETE FROM files WHERE id = ?", (row["id"],))
-        conn.commit()
-        conn.close()
+            # Remove DB entries for files that no longer exist on disk
+            existing_paths = set(files)
+            db_files = conn.execute(
+                "SELECT id, path FROM files WHERE folder_id = ?", (folder_id,)
+            ).fetchall()
+            for row in db_files:
+                if row["path"] not in existing_paths:
+                    conn.execute("DELETE FROM files WHERE id = ?", (row["id"],))
+            conn.commit()
 
     finally:
         with _scan_lock:
@@ -350,7 +350,11 @@ def scan_folder(folder_id: int, folder_path: str, ffprobe_path: str, threshold_k
 
 def start_scan(folder_id: int, folder_path: str, ffprobe_path: str, threshold_kbps: int,
                flag_av1: bool = True):
-    """Launch scan in a daemon thread."""
+    """Launch scan in a daemon thread, preventing concurrent scans."""
+    with _scan_lock:
+        if _scan_status.scanning:
+            return
+
     t = threading.Thread(
         target=scan_folder,
         args=(folder_id, folder_path, ffprobe_path, threshold_kbps, flag_av1),

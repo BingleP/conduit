@@ -5,10 +5,10 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
-from database import get_db
+from database import db_session
 
 
 # ---------------------------------------------------------------------------
@@ -59,6 +59,8 @@ _progress = EncodeProgress()
 _progress_lock = threading.Lock()
 _queue_changed = threading.Event()
 
+_settings_lock = threading.Lock()
+_vaapi_device: str = "/dev/dri/renderD128"
 _hw_encoder: str = "nvenc"          # nvenc | qsv | amf | vaapi | software
 _output_video_codec: str = "hevc"   # hevc | av1 | h264 | vp9
 _video_quality_cq: int = 24         # 0–51; lower = better quality
@@ -82,10 +84,17 @@ _SPEED_VP9_CPU  = {"fast": "4",       "medium": "2",        "slow": "1",       "
 _SPEED_VP9_DL   = {"fast": "good",    "medium": "good",     "slow": "best",    "veryslow": "best"}
 
 
+def set_vaapi_device(path: str):
+    global _vaapi_device
+    with _settings_lock:
+        _vaapi_device = path
+
+
 def set_hw_encoder(hw: str):
     global _hw_encoder
-    if hw in ("nvenc", "qsv", "amf", "vaapi", "software"):
-        _hw_encoder = hw
+    with _settings_lock:
+        if hw in ("nvenc", "qsv", "amf", "vaapi", "software"):
+            _hw_encoder = hw
 
 
 def set_encode_options(
@@ -104,28 +113,29 @@ def set_encode_options(
     global _output_video_codec, _video_quality_cq, _audio_lossy_action, _audio_languages
     global _output_container, _scale_height, _pix_fmt, _encoder_speed
     global _force_stereo, _audio_normalize, _subtitle_mode
-    if output_video_codec in ("hevc", "av1", "h264", "vp9"):
-        _output_video_codec = output_video_codec
-    if video_quality_cq is not None and 0 <= video_quality_cq <= 51:
-        _video_quality_cq = video_quality_cq
-    if audio_lossy_action in ("opus", "aac", "copy"):
-        _audio_lossy_action = audio_lossy_action
-    if audio_languages is not None:
-        _audio_languages = audio_languages
-    if output_container in ("mkv", "mp4", "webm"):
-        _output_container = output_container
-    if scale_height is not None:
-        _scale_height = scale_height if scale_height > 0 else None
-    if pix_fmt in ("auto", "yuv420p", "yuv420p10le"):
-        _pix_fmt = pix_fmt
-    if encoder_speed in ("fast", "medium", "slow", "veryslow"):
-        _encoder_speed = encoder_speed
-    if force_stereo is not None:
-        _force_stereo = bool(force_stereo)
-    if audio_normalize is not None:
-        _audio_normalize = bool(audio_normalize)
-    if subtitle_mode in ("copy", "strip"):
-        _subtitle_mode = subtitle_mode
+    with _settings_lock:
+        if output_video_codec in ("hevc", "av1", "h264", "vp9"):
+            _output_video_codec = output_video_codec
+        if video_quality_cq is not None and 0 <= video_quality_cq <= 51:
+            _video_quality_cq = video_quality_cq
+        if audio_lossy_action in ("opus", "aac", "copy"):
+            _audio_lossy_action = audio_lossy_action
+        if audio_languages is not None:
+            _audio_languages = audio_languages
+        if output_container in ("mkv", "mp4", "webm"):
+            _output_container = output_container
+        if scale_height is not None:
+            _scale_height = scale_height if scale_height > 0 else None
+        if pix_fmt in ("auto", "yuv420p", "yuv420p10le"):
+            _pix_fmt = pix_fmt
+        if encoder_speed in ("fast", "medium", "slow", "veryslow"):
+            _encoder_speed = encoder_speed
+        if force_stereo is not None:
+            _force_stereo = bool(force_stereo)
+        if audio_normalize is not None:
+            _audio_normalize = bool(audio_normalize)
+        if subtitle_mode in ("copy", "strip"):
+            _subtitle_mode = subtitle_mode
 
 _log_lines: deque = deque(maxlen=2000)
 _log_lock = threading.Lock()
@@ -147,18 +157,17 @@ def get_progress() -> dict:
 
 
 def get_queue() -> list:
-    conn = get_db()
-    rows = conn.execute("""
-        SELECT j.id, j.file_id, j.status, j.job_type,
-               j.added_at, j.started_at, j.finished_at, j.error_msg,
-               f.filename, f.duration_s
-        FROM jobs j
-        JOIN files f ON f.id = j.file_id
-        WHERE j.status IN ('queued','running','error','done')
-        ORDER BY j.id ASC
-    """).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+    with db_session() as conn:
+        rows = conn.execute("""
+            SELECT j.id, j.file_id, j.status, j.job_type,
+                   j.added_at, j.started_at, j.finished_at, j.error_msg,
+                   f.filename, f.duration_s
+            FROM jobs j
+            JOIN files f ON f.id = j.file_id
+            WHERE j.status IN ('queued','running','error','done')
+            ORDER BY j.id ASC
+        """).fetchall()
+        return [dict(r) for r in rows]
 
 
 # ---------------------------------------------------------------------------
@@ -333,17 +342,19 @@ def build_ffmpeg_cmd(file_row, job_type: str, input_path: str, output_path: str,
                      audio_normalize_override=None,
                      subtitle_mode_override: str = None) -> list:
     # Resolve effective settings: per-job override > global
-    eff_hw        = hw_encoder_override                                     or _hw_encoder
-    eff_codec     = output_video_codec_override                             or _output_video_codec
-    eff_cq        = video_quality_cq_override if video_quality_cq_override is not None else _video_quality_cq
-    eff_audio     = audio_lossy_action_override                             or _audio_lossy_action
-    eff_container = output_container_override                               or _output_container
-    eff_scale     = scale_height_override if scale_height_override is not None else _scale_height
-    eff_pix_fmt   = pix_fmt_override                                        or _pix_fmt
-    eff_speed     = encoder_speed_override                                  or _encoder_speed
-    eff_stereo    = force_stereo_override  if force_stereo_override  is not None else _force_stereo
-    eff_normalize = audio_normalize_override if audio_normalize_override is not None else _audio_normalize
-    eff_sub_mode  = subtitle_mode_override                                  or _subtitle_mode
+    with _settings_lock:
+        eff_hw        = hw_encoder_override                                     or _hw_encoder
+        eff_codec     = output_video_codec_override                             or _output_video_codec
+        eff_cq        = video_quality_cq_override if video_quality_cq_override is not None else _video_quality_cq
+        eff_audio     = audio_lossy_action_override                             or _audio_lossy_action
+        eff_container = output_container_override                               or _output_container
+        eff_scale     = scale_height_override if scale_height_override is not None else _scale_height
+        eff_pix_fmt   = pix_fmt_override                                        or _pix_fmt
+        eff_speed     = encoder_speed_override                                  or _encoder_speed
+        eff_stereo    = force_stereo_override  if force_stereo_override  is not None else _force_stereo
+        eff_normalize = audio_normalize_override if audio_normalize_override is not None else _audio_normalize
+        eff_sub_mode  = subtitle_mode_override                                  or _subtitle_mode
+        eff_vaapi_dev = _vaapi_device
 
     # Container-specific audio overrides
     if eff_container == "webm" and eff_audio != "opus":
@@ -357,7 +368,7 @@ def build_ffmpeg_cmd(file_row, job_type: str, input_path: str, output_path: str,
     cmd = [ffmpeg_path, "-y", "-progress", "pipe:1", "-nostats"]
     # VA-API device must be declared before -i
     if eff_hw == "vaapi" and job_type != "remux":
-        cmd += ["-vaapi_device", "/dev/dri/renderD128"]
+        cmd += ["-vaapi_device", eff_vaapi_dev]
     cmd += ["-i", input_path]
 
     # --- Video ---
@@ -370,8 +381,10 @@ def build_ffmpeg_cmd(file_row, job_type: str, input_path: str, output_path: str,
 
     # --- Audio ---
     audio_tracks = json.loads(file_row["audio_tracks"] or "[]")
+    with _settings_lock:
+        langs = _audio_languages
     audio_args, has_jpn = _build_audio_args(
-        audio_tracks, _audio_languages, eff_audio,
+        audio_tracks, langs, eff_audio,
         force_stereo=eff_stereo, normalize=eff_normalize,
     )
     cmd += audio_args
@@ -381,7 +394,9 @@ def build_ffmpeg_cmd(file_row, job_type: str, input_path: str, output_path: str,
         subtitle_tracks = json.loads(file_row["subtitle_tracks"] or "[]")
         valid_subs = [s for s in subtitle_tracks if s.get("codec_name", "") not in DROP_SUBTITLE_CODECS]
         mapped_sub_indices = set()
-        keep_all_langs = len(_audio_languages) == 0
+        with _settings_lock:
+            keep_all_langs = len(_audio_languages) == 0
+            cur_langs = _audio_languages
 
         if keep_all_langs:
             for s in valid_subs:
@@ -389,7 +404,7 @@ def build_ffmpeg_cmd(file_row, job_type: str, input_path: str, output_path: str,
                     cmd += ["-map", f"0:{s['stream_index']}"]
                     mapped_sub_indices.add(s["stream_index"])
         else:
-            for lang in _audio_languages:
+            for lang in cur_langs:
                 for s in [x for x in valid_subs if x.get("language") == lang]:
                     if s["stream_index"] not in mapped_sub_indices:
                         cmd += ["-map", f"0:{s['stream_index']}"]
@@ -435,7 +450,9 @@ def _run_encode(job_id: int, file_row, ffmpeg_path: str):
     output_dir = file_row["output_dir"]
 
     # Resolve effective container for output extension
-    eff_container = file_row["output_container"] or _output_container
+    with _settings_lock:
+        cur_container = _output_container
+    eff_container = file_row["output_container"] or cur_container
     ext = {"webm": ".webm", "mp4": ".mp4"}.get(eff_container, ".mkv")
 
     if output_dir:
@@ -459,12 +476,12 @@ def _run_encode(job_id: int, file_row, ffmpeg_path: str):
             started_at=time.time(),
         )
 
-    conn = get_db()
-    conn.execute(
-        "UPDATE jobs SET status='running', started_at=datetime('now') WHERE id=?",
-        (job_id,),
-    )
-    conn.commit()
+    with db_session() as conn:
+        conn.execute(
+            "UPDATE jobs SET status='running', started_at=? WHERE id=?",
+            (datetime.now(timezone.utc).isoformat(), job_id),
+        )
+        conn.commit()
 
     cmd = build_ffmpeg_cmd(
         file_row, job_type, input_path, output_path, ffmpeg_path,
@@ -567,45 +584,63 @@ def _run_encode(job_id: int, file_row, ffmpeg_path: str):
             except Exception:
                 pass
 
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
 
     if success:
         try:
             if output_dir:
                 # Output was written to a separate directory — original is untouched
                 new_mtime = os.path.getmtime(input_path)
-                conn.execute(
-                    "UPDATE files SET mtime=?, needs_optimize=0 WHERE id=?",
-                    (new_mtime, file_row["file_id"]),
-                )
+                with db_session() as conn:
+                    conn.execute(
+                        "UPDATE files SET mtime=?, needs_optimize=0 WHERE id=?",
+                        (new_mtime, file_row["file_id"]),
+                    )
+                    conn.commit()
             elif keep_original:
                 # Leave the original untouched; mark it optimized so it leaves the flagged list
                 new_mtime = os.path.getmtime(input_path)
-                conn.execute(
-                    "UPDATE files SET mtime=?, needs_optimize=0 WHERE id=?",
-                    (new_mtime, file_row["file_id"]),
-                )
+                with db_session() as conn:
+                    conn.execute(
+                        "UPDATE files SET mtime=?, needs_optimize=0 WHERE id=?",
+                        (new_mtime, file_row["file_id"]),
+                    )
+                    conn.commit()
             else:
                 # Replace original: delete it, rename temp to final path
                 # If container changed extension (e.g. mkv→webm), use new extension
                 final_path = base + ext
-                os.remove(input_path)
-                os.rename(output_path, final_path)
+                bak_path = input_path + ".bak"
+                
+                os.rename(input_path, bak_path)
+                try:
+                    os.rename(output_path, final_path)
+                    if os.path.exists(bak_path):
+                        os.remove(bak_path)
+                except Exception as e:
+                    if os.path.exists(bak_path):
+                        os.rename(bak_path, input_path)
+                    raise e
+
                 new_mtime = os.path.getmtime(final_path)
                 new_filename = os.path.basename(final_path)
-                conn.execute(
-                    "UPDATE files SET path=?, filename=?, mtime=?, needs_optimize=0 WHERE id=?",
-                    (final_path, new_filename, new_mtime, file_row["file_id"]),
-                )
+                with db_session() as conn:
+                    conn.execute(
+                        "UPDATE files SET path=?, filename=?, mtime=?, needs_optimize=0 WHERE id=?",
+                        (final_path, new_filename, new_mtime, file_row["file_id"]),
+                    )
+                    conn.commit()
         except Exception as e:
             error_msg = f"Post-encode file handling failed: {e}"
             success = False
 
     if success:
-        conn.execute(
-            "UPDATE jobs SET status='done', finished_at=? WHERE id=?",
-            (now, job_id),
-        )
+        with db_session() as conn:
+            conn.execute(
+                "UPDATE jobs SET status='done', finished_at=? WHERE id=?",
+                (now, job_id),
+            )
+            conn.commit()
         with _progress_lock:
             _progress.status = "done"
             _progress.percent = 100.0
@@ -616,39 +651,38 @@ def _run_encode(job_id: int, file_row, ffmpeg_path: str):
                 os.remove(output_path)
             except Exception:
                 pass
-        conn.execute(
-            "UPDATE jobs SET status='error', finished_at=?, error_msg=? WHERE id=?",
-            (now, error_msg, job_id),
-        )
+        with db_session() as conn:
+            conn.execute(
+                "UPDATE jobs SET status='error', finished_at=?, error_msg=? WHERE id=?",
+                (now, error_msg, job_id),
+            )
+            conn.commit()
         with _progress_lock:
             _progress.status = "error"
             _progress.error_msg = error_msg or "Unknown error"
 
-    conn.commit()
-    conn.close()
     _queue_changed.set()
 
 
 def _encoder_worker(ffmpeg_path: str):
     """Main encoder loop — processes one job at a time."""
     while True:
-        conn = get_db()
-        row = conn.execute("""
-            SELECT j.id as job_id, j.file_id, j.job_type, j.keep_original,
-                   j.hw_encoder, j.output_video_codec, j.video_quality_cq,
-                   j.audio_lossy_action, j.output_container,
-                   j.scale_height, j.pix_fmt, j.encoder_speed,
-                   j.force_stereo, j.audio_normalize, j.subtitle_mode,
-                   j.output_dir,
-                   f.path, f.filename, f.duration_s,
-                   f.audio_tracks, f.subtitle_tracks
-            FROM jobs j
-            JOIN files f ON f.id = j.file_id
-            WHERE j.status = 'queued'
-            ORDER BY j.id ASC
-            LIMIT 1
-        """).fetchone()
-        conn.close()
+        with db_session() as conn:
+            row = conn.execute("""
+                SELECT j.id as job_id, j.file_id, j.job_type, j.keep_original,
+                       j.hw_encoder, j.output_video_codec, j.video_quality_cq,
+                       j.audio_lossy_action, j.output_container,
+                       j.scale_height, j.pix_fmt, j.encoder_speed,
+                       j.force_stereo, j.audio_normalize, j.subtitle_mode,
+                       j.output_dir,
+                       f.path, f.filename, f.duration_s,
+                       f.audio_tracks, f.subtitle_tracks
+                FROM jobs j
+                JOIN files f ON f.id = j.file_id
+                WHERE j.status = 'queued'
+                ORDER BY j.id ASC
+                LIMIT 1
+            """).fetchone()
 
         if row is None:
             time.sleep(1)
@@ -664,30 +698,53 @@ def _encoder_worker(ffmpeg_path: str):
 def startup_cleanup():
     """
     On startup: reset any 'running' jobs to 'error' (crash recovery),
-    delete orphaned .new.mkv temp files.
+    restore original files from .bak if rename failed,
+    delete orphaned .new.* and .bak files.
     """
-    conn = get_db()
+    with db_session() as conn:
+        # Reset running jobs
+        conn.execute(
+            "UPDATE jobs SET status='error', error_msg='Server restarted during encode' "
+            "WHERE status='running'"
+        )
+        conn.commit()
 
-    # Reset running jobs
-    conn.execute(
-        "UPDATE jobs SET status='error', error_msg='Server restarted during encode' "
-        "WHERE status='running'"
-    )
-    conn.commit()
-
-    # Find all file paths, look for orphaned temp encode files
-    rows = conn.execute("SELECT path FROM files").fetchall()
+        # Find all file paths
+        rows = conn.execute("SELECT path FROM files").fetchall()
+    
     for row in rows:
-        base, _ = os.path.splitext(row["path"])
-        for suffix in (".new.mkv", ".optimized.mkv", ".new.webm", ".optimized.webm", ".new.mp4", ".optimized.mp4"):
-            orphan = base + suffix
+        path = row["path"]
+        bak_path = path + ".bak"
+        
+        # Restore from .bak if original is missing
+        if os.path.exists(bak_path) and not os.path.exists(path):
+            try:
+                os.rename(bak_path, path)
+            except Exception:
+                pass
+        
+        # Delete orphaned .new.* and .bak files
+        base, _ = os.path.splitext(path)
+        for suffix in (".new.mkv", ".new.webm", ".new.mp4", ".bak"):
+            orphan = base + suffix if suffix != ".bak" else path + suffix
             if os.path.exists(orphan):
                 try:
                     os.remove(orphan)
                 except Exception:
                     pass
-
-    conn.close()
+        # Also check common optimized suffixes
+        for suffix in (".optimized.mkv", ".optimized.webm", ".optimized.mp4"):
+            orphan = base + suffix
+            if os.path.exists(orphan):
+                try:
+                    # Optimized files are keep_original=True, so they aren't "orphans" 
+                    # in the same way, but if they are partial from a crash, they should be cleaned.
+                    # However, if the job is now 'error', they are definitely partial.
+                    # We'll just clean them to be safe if they exist and aren't the main 'path'.
+                    if orphan != path:
+                        os.remove(orphan)
+                except Exception:
+                    pass
 
 
 def start_encoder_thread(ffmpeg_path: str):
