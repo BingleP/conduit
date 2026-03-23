@@ -52,16 +52,41 @@ def init_db():
 
     c.execute("""
         CREATE TABLE IF NOT EXISTS jobs (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            file_id     INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
-            status      TEXT    NOT NULL DEFAULT 'queued',
-            job_type    TEXT    NOT NULL DEFAULT 'encode',
-            added_at    TEXT    NOT NULL DEFAULT (datetime('now')),
-            started_at  TEXT,
-            finished_at TEXT,
-            error_msg   TEXT
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_id             INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+            status              TEXT    NOT NULL DEFAULT 'queued',
+            job_type            TEXT    NOT NULL DEFAULT 'encode',
+            keep_original       INTEGER NOT NULL DEFAULT 0,
+            hw_encoder          TEXT,
+            output_video_codec  TEXT,
+            video_quality_cq    INTEGER,
+            audio_lossy_action  TEXT,
+            added_at            TEXT    NOT NULL DEFAULT (datetime('now')),
+            started_at          TEXT,
+            finished_at         TEXT,
+            error_msg           TEXT
         )
     """)
+
+    # Migrations for existing databases
+    existing_cols = [r[1] for r in c.execute("PRAGMA table_info(jobs)").fetchall()]
+    for col, defn in [
+        ("keep_original",      "INTEGER NOT NULL DEFAULT 0"),
+        ("hw_encoder",         "TEXT"),
+        ("output_video_codec", "TEXT"),
+        ("video_quality_cq",   "INTEGER"),
+        ("audio_lossy_action", "TEXT"),
+        ("output_container",   "TEXT"),
+        ("scale_height",       "INTEGER"),
+        ("pix_fmt",            "TEXT"),
+        ("encoder_speed",      "TEXT"),
+        ("force_stereo",       "INTEGER"),
+        ("audio_normalize",    "INTEGER"),
+        ("subtitle_mode",      "TEXT"),
+        ("output_dir",         "TEXT"),
+    ]:
+        if col not in existing_cols:
+            c.execute(f"ALTER TABLE jobs ADD COLUMN {col} {defn}")
 
     conn.commit()
     conn.close()

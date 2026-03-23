@@ -33,6 +33,11 @@ const state = {
   _logPollTimer: null,
   _pendingHdrFileIds: [],
   _pendingNonHdrFileIds: [],
+  _pendingKeepOriginal: false,
+  _pendingEncodeOverrides: null,
+  _ceKeepOriginal: false,
+  _ceHdrAction: 'remux',
+  _ceOutputDir: null,
   flaggedFiles: [],
   openFileId: null,
 };
@@ -107,28 +112,73 @@ function initDOM() {
   DOM.encodeLog   = $('encode-log');
   DOM.historyList = $('history-list');
 
+  DOM.optimizeConfirmModal  = $('optimize-confirm-modal');
+  DOM.optimizeConfirmCount  = $('optimize-confirm-count');
+  DOM.optimizeReplaceBtn    = $('optimize-replace-btn');
+  DOM.optimizeKeepBtn       = $('optimize-keep-btn');
+
+  DOM.encodeBtn             = $('encode-btn');
+  DOM.customEncodeModal     = $('custom-encode-modal');
+  DOM.customEncodeCount     = $('custom-encode-count');
+  DOM.cePreset              = $('ce-preset');
+  DOM.ceHwEncoder           = $('ce-hw-encoder');
+  DOM.ceOutputCodec         = $('ce-output-codec');
+  DOM.ceCq                  = $('ce-cq');
+  DOM.ceCqDisplay           = $('ce-cq-display');
+  DOM.ceAudioAction         = $('ce-audio-action');
+  DOM.ceContainer           = $('ce-container');
+  DOM.ceScaleHeight         = $('ce-scale-height');
+  DOM.cePixFmt              = $('ce-pix-fmt');
+  DOM.ceEncoderSpeed        = $('ce-encoder-speed');
+  DOM.ceSubtitleMode        = $('ce-subtitle-mode');
+  DOM.ceForceStereo         = $('ce-force-stereo');
+  DOM.ceAudioNormalize      = $('ce-audio-normalize');
+  DOM.ceOutputDir           = $('ce-output-dir');
+  DOM.ceBrowseBtn           = $('ce-browse-btn');
+  DOM.ceClearDirBtn         = $('ce-clear-dir-btn');
+  DOM.ceAfterSection        = $('ce-after-section');
+  DOM.collisionModal        = $('collision-modal');
+  DOM.collisionDirLabel     = $('collision-dir-label');
+  DOM.collisionList         = $('collision-list');
+  DOM.collisionCancelBtn    = $('collision-cancel-btn');
+  DOM.collisionConfirmBtn   = $('collision-confirm-btn');
+  DOM.ceHdrSection          = $('ce-hdr-section');
+  DOM.ceHdrCount            = $('ce-hdr-count');
+  DOM.ceHdrFiles            = $('ce-hdr-files');
+  DOM.ceHdrRemuxBtn         = $('ce-hdr-remux-btn');
+  DOM.ceHdrReencodeBtn      = $('ce-hdr-reencode-btn');
+  DOM.ceReplaceBtn          = $('ce-replace-btn');
+  DOM.ceKeepBtn             = $('ce-keep-btn');
+  DOM.ceSubmitBtn           = $('ce-submit-btn');
+
   DOM.settingsBtn       = $('settings-btn');
   DOM.settingsModal     = $('settings-modal');
-  DOM.settingsHwEncoder   = $('settings-hw-encoder');
-  DOM.settingsFfmpeg      = $('settings-ffmpeg');
-  DOM.settingsFfprobe     = $('settings-ffprobe');
-  DOM.settingsOutputCodec = $('settings-output-codec');
-  DOM.settingsCq          = $('settings-cq');
-  DOM.settingsCqDisplay   = $('settings-cq-display');
-  DOM.settingsAudioAction = $('settings-audio-action');
-  DOM.settingsLangAll     = $('settings-lang-all');
-  DOM.settingsLangChips   = $('settings-lang-chips');
-  DOM.settingsThreshold   = $('settings-threshold');
-  DOM.settingsFlagAv1     = $('settings-flag-av1');
-  DOM.settingsPort        = $('settings-port');
-  DOM.settingsSaveBtn     = $('settings-save-btn');
-  DOM.settingsError       = $('settings-error');
-  DOM.settingsSuccess     = $('settings-success');
-  DOM.settingsRestartNote = $('settings-restart-note');
-  DOM.settingsWebUiEnabled  = $('settings-web-ui-enabled');
-  DOM.settingsWebUiHost     = $('settings-web-ui-host');
-  DOM.settingsWebUiPort     = $('settings-web-ui-port');
-  DOM.settingsNetworkFields = $('settings-network-fields');
+  DOM.settingsHwEncoder      = $('settings-hw-encoder');
+  DOM.settingsFfmpeg         = $('settings-ffmpeg');
+  DOM.settingsFfprobe        = $('settings-ffprobe');
+  DOM.settingsOutputCodec    = $('settings-output-codec');
+  DOM.settingsCq             = $('settings-cq');
+  DOM.settingsCqDisplay      = $('settings-cq-display');
+  DOM.settingsOutputContainer = $('settings-output-container');
+  DOM.settingsScaleHeight    = $('settings-scale-height');
+  DOM.settingsPixFmt         = $('settings-pix-fmt');
+  DOM.settingsEncoderSpeed   = $('settings-encoder-speed');
+  DOM.settingsSubtitleMode   = $('settings-subtitle-mode');
+  DOM.settingsAudioAction    = $('settings-audio-action');
+  DOM.settingsLangAll        = $('settings-lang-all');
+  DOM.settingsLangChips      = $('settings-lang-chips');
+  DOM.settingsForceStereo    = $('settings-force-stereo');
+  DOM.settingsAudioNormalize = $('settings-audio-normalize');
+  DOM.settingsThreshold      = $('settings-threshold');
+  DOM.settingsFlagAv1        = $('settings-flag-av1');
+  DOM.settingsSaveBtn        = $('settings-save-btn');
+  DOM.settingsError          = $('settings-error');
+  DOM.settingsSuccess        = $('settings-success');
+  DOM.settingsRestartNote    = $('settings-restart-note');
+  DOM.settingsWebUiEnabled   = $('settings-web-ui-enabled');
+  DOM.settingsWebUiHost      = $('settings-web-ui-host');
+  DOM.settingsWebUiPort      = $('settings-web-ui-port');
+  DOM.settingsNetworkFields  = $('settings-network-fields');
 
   DOM.aboutBtn   = $('about-btn');
   DOM.aboutModal = $('about-modal');
@@ -163,6 +213,8 @@ async function api(method, path, body) {
 const GET    = path       => api('GET',    path);
 const POST   = (path, b)  => api('POST',   path, b);
 const DELETE = path       => api('DELETE', path);
+
+const escHtml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 // ---------------------------------------------------------------------------
 // Formatters
@@ -657,6 +709,7 @@ function syncSelectAllCheckbox() {
 
 function updateOptimizeBtn() {
   DOM.optimizeBtn.disabled = state.selectedIds.size === 0;
+  DOM.encodeBtn.disabled   = state.selectedIds.size === 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -778,17 +831,331 @@ function handleOptimize() {
   const selectedFiles = state.files.filter(f => state.selectedIds.has(f.id));
   if (selectedFiles.length === 0) return;
 
-  const hdrFiles   = selectedFiles.filter(f => f.hdr_type === 'hdr10plus' || f.hdr_type === 'dolby_vision');
+  const hdrFiles    = selectedFiles.filter(f => f.hdr_type === 'hdr10plus' || f.hdr_type === 'dolby_vision');
   const normalFiles = selectedFiles.filter(f => f.hdr_type !== 'hdr10plus' && f.hdr_type !== 'dolby_vision');
 
   state._pendingHdrFileIds    = hdrFiles.map(f => f.id);
   state._pendingNonHdrFileIds = normalFiles.map(f => f.id);
 
-  if (hdrFiles.length > 0) {
-    showHdrModal(hdrFiles);
-  } else {
-    submitJobs(normalFiles.map(f => f.id), 'encode');
+  // Show keep/replace confirmation first, then HDR modal if needed
+  const count = selectedFiles.length;
+  DOM.optimizeConfirmCount.textContent = `${count} file${count !== 1 ? 's' : ''}`;
+  openModal('optimize-confirm-modal');
+}
+
+// ---------------------------------------------------------------------------
+// Presets
+// ---------------------------------------------------------------------------
+
+let _presetsCache = null;
+
+async function _loadPresets(force = false) {
+  if (_presetsCache && !force) return _presetsCache;
+  const data = await GET('/api/presets');
+  _presetsCache = [...data.builtin, ...data.user];
+  return _presetsCache;
+}
+
+async function _populatePresetSelector() {
+  const presets = await _loadPresets();
+  const sel = DOM.cePreset;
+  sel.innerHTML = '<option value="">— Custom —</option>';
+  for (const p of presets) {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = p.name + (p.builtin ? ' ★' : '');
+    sel.appendChild(opt);
   }
+}
+
+async function loadPresetsTab() {
+  _presetsCache = null; // force reload
+  const presets = await _loadPresets();
+  const list = $('presets-list');
+  list.innerHTML = '';
+
+  if (presets.length === 0) {
+    list.innerHTML = '<div class="db-empty">No presets yet. Click "+ New Preset" to create one.</div>';
+    return;
+  }
+
+  for (const p of presets) {
+    const row = document.createElement('div');
+    row.className = 'preset-row';
+    const meta = [
+      p.hw_encoder?.toUpperCase(),
+      p.output_video_codec?.toUpperCase(),
+      `CQ ${p.video_quality_cq}`,
+      p.audio_lossy_action?.toUpperCase(),
+      p.output_container?.toUpperCase(),
+    ].filter(Boolean).join(' · ');
+
+    row.innerHTML = `
+      <div class="preset-row-info">
+        <span class="preset-row-name">${escHtml(p.name)}${p.builtin ? ' <span class="preset-builtin-badge">built-in</span>' : ''}</span>
+        <span class="preset-row-meta">${meta}</span>
+        ${p.description ? `<span class="preset-row-desc">${escHtml(p.description)}</span>` : ''}
+      </div>
+      <div class="preset-row-actions">
+        ${!p.builtin ? `<button class="btn-preset-edit" data-id="${p.id}">Edit</button><button class="btn-preset-delete" data-id="${p.id}">Delete</button>` : ''}
+      </div>`;
+    list.appendChild(row);
+  }
+
+  list.querySelectorAll('.btn-preset-edit').forEach(btn => {
+    btn.addEventListener('click', () => _openPresetEditor(btn.dataset.id));
+  });
+  list.querySelectorAll('.btn-preset-delete').forEach(btn => {
+    btn.addEventListener('click', () => _deletePreset(btn.dataset.id));
+  });
+}
+
+function _openPresetEditor(presetId = null) {
+  const editor = $('preset-editor');
+  const title  = $('preset-editor-title');
+  editor.dataset.editingId = presetId || '';
+
+  if (presetId) {
+    const p = _presetsCache?.find(x => x.id === presetId);
+    if (!p) return;
+    title.textContent = 'Edit Preset';
+    $('pe-name').value        = p.name;
+    $('pe-hw-encoder').value  = p.hw_encoder;
+    $('pe-output-codec').value= p.output_video_codec;
+    $('pe-container').value   = p.output_container;
+    $('pe-cq').value          = p.video_quality_cq;
+    $('pe-cq-display').textContent = p.video_quality_cq;
+    $('pe-audio-action').value= p.audio_lossy_action;
+  } else {
+    title.textContent = 'New Preset';
+    $('pe-name').value        = '';
+    $('pe-hw-encoder').value  = 'nvenc';
+    $('pe-output-codec').value= 'hevc';
+    $('pe-container').value   = 'mkv';
+    $('pe-cq').value          = 24;
+    $('pe-cq-display').textContent = '24';
+    $('pe-audio-action').value= 'opus';
+  }
+
+  editor.classList.remove('hidden');
+  $('pe-name').focus();
+}
+
+async function _savePreset() {
+  const editor = $('preset-editor');
+  const editingId = editor.dataset.editingId;
+  const name = $('pe-name').value.trim();
+  if (!name) { $('pe-name').focus(); return; }
+
+  const payload = {
+    name,
+    hw_encoder:         $('pe-hw-encoder').value,
+    output_video_codec: $('pe-output-codec').value,
+    video_quality_cq:   parseInt($('pe-cq').value, 10),
+    audio_lossy_action: $('pe-audio-action').value,
+    output_container:   $('pe-container').value,
+  };
+
+  try {
+    if (editingId) {
+      await fetch(`/api/presets/${editingId}`, {
+        method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload),
+      }).then(r => { if (!r.ok) throw new Error(); });
+    } else {
+      await POST('/api/presets', payload);
+    }
+    editor.classList.add('hidden');
+    loadPresetsTab();
+  } catch (e) {
+    alert('Failed to save preset.');
+  }
+}
+
+async function _deletePreset(id) {
+  if (!confirm('Delete this preset?')) return;
+  try {
+    await fetch(`/api/presets/${id}`, { method: 'DELETE' });
+    loadPresetsTab();
+  } catch (e) {
+    alert('Failed to delete preset.');
+  }
+}
+
+async function handleCustomEncode() {
+  const selectedFiles = state.files.filter(f => state.selectedIds.has(f.id));
+  if (selectedFiles.length === 0) return;
+
+  const count = selectedFiles.length;
+  DOM.customEncodeCount.textContent = `${count} file${count !== 1 ? 's' : ''}`;
+
+  // Load presets into selector
+  await _populatePresetSelector();
+
+  // Pre-fill from current global settings
+  try {
+    const s = await GET('/api/settings');
+    _ceApplySettings({
+      hw_encoder:         s.hw_encoder         || 'nvenc',
+      output_video_codec: s.output_video_codec  || 'hevc',
+      video_quality_cq:   s.video_quality_cq    ?? 24,
+      audio_lossy_action: s.audio_lossy_action  || 'opus',
+      output_container:   s.output_container    || 'mkv',
+      scale_height:       s.scale_height        ?? 0,
+      pix_fmt:            s.pix_fmt             || 'auto',
+      encoder_speed:      s.encoder_speed       || 'medium',
+      subtitle_mode:      s.subtitle_mode       || 'copy',
+      force_stereo:       s.force_stereo        || false,
+      audio_normalize:    s.audio_normalize     || false,
+    });
+  } catch (_) { /* use current defaults */ }
+
+  DOM.cePreset.value = ''; // reset preset selector
+
+  // Show HDR section only if HDR files are selected
+  const hdrFiles = selectedFiles.filter(f => f.hdr_type === 'hdr10plus' || f.hdr_type === 'dolby_vision');
+  if (hdrFiles.length > 0) {
+    DOM.ceHdrSection.classList.remove('hidden');
+    DOM.ceHdrCount.textContent = `(${hdrFiles.length})`;
+    DOM.ceHdrFiles.innerHTML = hdrFiles.map(f =>
+      `<div class="ce-hdr-file-item">${hdrBadgeHtml(f.hdr_type)}<span class="ce-hdr-file-name" title="${escHtml(f.path)}">${escHtml(f.filename)}</span></div>`
+    ).join('');
+    _ceSetHdrAction('remux');
+  } else {
+    DOM.ceHdrSection.classList.add('hidden');
+  }
+
+  _ceSetKeepOriginal(false);
+  _ceSetOutputDir(null);
+  openModal('custom-encode-modal');
+}
+
+function _ceApplySettings(p) {
+  if (p.hw_encoder)         DOM.ceHwEncoder.value       = p.hw_encoder;
+  if (p.output_video_codec) DOM.ceOutputCodec.value     = p.output_video_codec;
+  if (p.video_quality_cq != null) {
+    DOM.ceCq.value              = p.video_quality_cq;
+    DOM.ceCqDisplay.textContent = p.video_quality_cq;
+  }
+  if (p.audio_lossy_action) DOM.ceAudioAction.value     = p.audio_lossy_action;
+  if (p.output_container)   DOM.ceContainer.value       = p.output_container;
+  if (p.scale_height != null) DOM.ceScaleHeight.value   = String(p.scale_height);
+  if (p.pix_fmt)            DOM.cePixFmt.value          = p.pix_fmt;
+  if (p.encoder_speed)      DOM.ceEncoderSpeed.value    = p.encoder_speed;
+  if (p.subtitle_mode)      DOM.ceSubtitleMode.value    = p.subtitle_mode;
+  if (p.force_stereo != null)    DOM.ceForceStereo.checked    = p.force_stereo;
+  if (p.audio_normalize != null) DOM.ceAudioNormalize.checked = p.audio_normalize;
+}
+
+function _ceSetKeepOriginal(keep) {
+  state._ceKeepOriginal = keep;
+  DOM.ceReplaceBtn.classList.toggle('ce-choice-active', !keep);
+  DOM.ceKeepBtn.classList.toggle('ce-choice-active', keep);
+}
+
+function _ceSetHdrAction(action) {
+  state._ceHdrAction = action; // 'remux' | 'reencode'
+  DOM.ceHdrRemuxBtn.classList.toggle('ce-hdr-choice-active', action === 'remux');
+  DOM.ceHdrReencodeBtn.classList.toggle('ce-hdr-choice-active', action === 'reencode');
+}
+
+function _ceSetOutputDir(dir) {
+  state._ceOutputDir = dir || null;
+  if (dir) {
+    DOM.ceOutputDir.value = dir;
+    DOM.ceClearDirBtn.classList.remove('hidden');
+    // Hide keep/replace choice — output dir implies original is always kept
+    DOM.ceAfterSection.style.display = 'none';
+  } else {
+    DOM.ceOutputDir.value = '';
+    DOM.ceClearDirBtn.classList.add('hidden');
+    DOM.ceAfterSection.style.display = '';
+  }
+}
+
+function _detectOutputDirCollisions(files) {
+  // Returns groups of files that share the same output stem (and would overwrite each other)
+  const stems = {};
+  for (const f of files) {
+    const stem = f.filename.replace(/\.[^/.]+$/, '');
+    if (!stems[stem]) stems[stem] = [];
+    stems[stem].push(f);
+  }
+  return Object.entries(stems).filter(([, group]) => group.length > 1);
+}
+
+function _showCollisionWarning(collisions, outputDir, onConfirm) {
+  DOM.collisionDirLabel.textContent = outputDir;
+  DOM.collisionList.innerHTML = collisions.map(([stem, files]) => `
+    <div class="collision-group">
+      <div class="collision-group-name">${escHtml(stem)}.*</div>
+      <ul class="collision-group-files">
+        ${files.map(f => `<li title="${escHtml(f.path)}">${escHtml(f.filename)}</li>`).join('')}
+      </ul>
+    </div>`).join('');
+
+  // Wire confirm once
+  const onConfirmClick = () => {
+    DOM.collisionConfirmBtn.removeEventListener('click', onConfirmClick);
+    closeModal('collision-modal');
+    onConfirm();
+  };
+  DOM.collisionConfirmBtn.addEventListener('click', onConfirmClick);
+
+  openModal('collision-modal');
+}
+
+async function _submitCustomEncode() {
+  const selectedFiles = state.files.filter(f => state.selectedIds.has(f.id));
+  if (selectedFiles.length === 0) return;
+
+  // Check for output filename collisions before doing anything irreversible
+  if (state._ceOutputDir) {
+    const collisions = _detectOutputDirCollisions(selectedFiles);
+    if (collisions.length > 0) {
+      _showCollisionWarning(collisions, state._ceOutputDir, () => {
+        closeModal('custom-encode-modal');
+        _doSubmitCustomEncode(selectedFiles);
+      });
+      return; // wait for user decision
+    }
+  }
+
+  closeModal('custom-encode-modal');
+  _doSubmitCustomEncode(selectedFiles);
+}
+
+function _doSubmitCustomEncode(selectedFiles) {
+  const ko = state._ceKeepOriginal;
+  const overrides = {
+    hw_encoder:         DOM.ceHwEncoder.value,
+    output_video_codec: DOM.ceOutputCodec.value,
+    video_quality_cq:   parseInt(DOM.ceCq.value, 10),
+    audio_lossy_action: DOM.ceAudioAction.value,
+    output_container:   DOM.ceContainer.value,
+    scale_height:       parseInt(DOM.ceScaleHeight.value, 10) || null,
+    pix_fmt:            DOM.cePixFmt.value,
+    encoder_speed:      DOM.ceEncoderSpeed.value,
+    subtitle_mode:      DOM.ceSubtitleMode.value,
+    force_stereo:       DOM.ceForceStereo.checked,
+    audio_normalize:    DOM.ceAudioNormalize.checked,
+    output_dir:         state._ceOutputDir || null,
+  };
+
+  const hdrFiles    = selectedFiles.filter(f => f.hdr_type === 'hdr10plus' || f.hdr_type === 'dolby_vision');
+  const normalFiles = selectedFiles.filter(f => f.hdr_type !== 'hdr10plus' && f.hdr_type !== 'dolby_vision');
+
+  const jobs = [];
+  if (normalFiles.length > 0) {
+    jobs.push(submitJobs(normalFiles.map(f => f.id), 'encode', ko, overrides));
+  }
+  if (hdrFiles.length > 0) {
+    if (state._ceHdrAction === 'remux') {
+      jobs.push(submitJobs(hdrFiles.map(f => f.id), 'remux', ko, overrides));
+    } else {
+      jobs.push(submitJobs(hdrFiles.map(f => f.id), 'encode', ko, overrides));
+    }
+  }
+  Promise.all(jobs);
 }
 
 function showHdrModal(hdrFiles) {
@@ -804,10 +1171,25 @@ function showHdrModal(hdrFiles) {
 }
 
 
-async function submitJobs(fileIds, jobType) {
+async function submitJobs(fileIds, jobType, keepOriginal = false, encodeOverrides = null) {
   if (!fileIds.length) return;
   try {
-    const result = await POST('/api/jobs', { file_ids: fileIds, job_type: jobType });
+    const payload = { file_ids: fileIds, job_type: jobType, keep_original: keepOriginal };
+    if (encodeOverrides) {
+      payload.hw_encoder         = encodeOverrides.hw_encoder;
+      payload.output_video_codec = encodeOverrides.output_video_codec;
+      payload.video_quality_cq   = encodeOverrides.video_quality_cq;
+      payload.audio_lossy_action = encodeOverrides.audio_lossy_action;
+      payload.output_container   = encodeOverrides.output_container;
+      if (encodeOverrides.scale_height != null)    payload.scale_height    = encodeOverrides.scale_height;
+      if (encodeOverrides.pix_fmt)                 payload.pix_fmt         = encodeOverrides.pix_fmt;
+      if (encodeOverrides.encoder_speed)           payload.encoder_speed   = encodeOverrides.encoder_speed;
+      if (encodeOverrides.subtitle_mode)           payload.subtitle_mode   = encodeOverrides.subtitle_mode;
+      if (encodeOverrides.force_stereo != null)    payload.force_stereo    = encodeOverrides.force_stereo;
+      if (encodeOverrides.audio_normalize != null) payload.audio_normalize = encodeOverrides.audio_normalize;
+      if (encodeOverrides.output_dir)              payload.output_dir      = encodeOverrides.output_dir;
+    }
+    const result = await POST('/api/jobs', payload);
     state.selectedIds.clear();
     renderTable();
     openQueuePanel();
@@ -861,12 +1243,17 @@ function hideModalError(modalId) {
 // Modal open / close
 // ---------------------------------------------------------------------------
 
+const _modalStack = [];
+
 function openModal(id) {
   $(id).classList.remove('hidden');
+  _modalStack.push(id);
 }
 
 function closeModal(id) {
   $(id).classList.add('hidden');
+  const idx = _modalStack.lastIndexOf(id);
+  if (idx !== -1) _modalStack.splice(idx, 1);
 }
 
 function bindModals() {
@@ -883,10 +1270,10 @@ function bindModals() {
     });
   });
 
-  // Escape key
+  // Escape key — close only the topmost modal
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') {
-      document.querySelectorAll('.modal-overlay:not(.hidden)').forEach(o => closeModal(o.id));
+    if (e.key === 'Escape' && _modalStack.length > 0) {
+      closeModal(_modalStack[_modalStack.length - 1]);
     }
   });
 
@@ -1548,15 +1935,26 @@ async function openSettingsModal() {
     DOM.settingsCq.value = cq;
     DOM.settingsCqDisplay.textContent = cq;
 
+    // Video tab extras
+    DOM.settingsOutputContainer.value = s.output_container || 'mkv';
+    DOM.settingsScaleHeight.value     = s.scale_height ? String(s.scale_height) : '0';
+    DOM.settingsPixFmt.value          = s.pix_fmt || 'auto';
+    DOM.settingsEncoderSpeed.value    = s.encoder_speed || 'medium';
+    DOM.settingsSubtitleMode.value    = s.subtitle_mode || 'copy';
+
     // Audio action
     DOM.settingsAudioAction.value = s.audio_lossy_action || 'opus';
 
     // Language chips
     _loadLangChips(s.audio_languages);
 
+    // Audio extras
+    DOM.settingsForceStereo.checked    = s.force_stereo || false;
+    DOM.settingsAudioNormalize.checked = s.audio_normalize || false;
+
     DOM.settingsThreshold.value = s.needs_optimize_bitrate_threshold_kbps || '';
     DOM.settingsFlagAv1.checked = s.flag_av1 !== false;
-    DOM.settingsPort.value      = s.port || '';
+
 
     // Network tab
     DOM.settingsWebUiEnabled.checked = s.web_ui_enabled || false;
@@ -1592,14 +1990,22 @@ async function saveSettings() {
   const webUiPort = parseInt(DOM.settingsWebUiPort.value, 10);
 
   try {
+    const scaleHeightRaw = parseInt(DOM.settingsScaleHeight.value, 10);
     await POST('/api/settings', {
       hw_encoder:          DOM.settingsHwEncoder.value || null,
       ffmpeg_path:         DOM.settingsFfmpeg.value.trim() || null,
       ffprobe_path:        DOM.settingsFfprobe.value.trim() || null,
       output_video_codec:  selectedCodec ? selectedCodec.value : null,
       video_quality_cq:    parseInt(DOM.settingsCq.value, 10),
+      output_container:    DOM.settingsOutputContainer.value || null,
+      scale_height:        isNaN(scaleHeightRaw) ? null : scaleHeightRaw,
+      pix_fmt:             DOM.settingsPixFmt.value || null,
+      encoder_speed:       DOM.settingsEncoderSpeed.value || null,
+      subtitle_mode:       DOM.settingsSubtitleMode.value || null,
       audio_lossy_action:  DOM.settingsAudioAction.value || null,
       audio_languages:     _getSelectedLanguages(),
+      force_stereo:        DOM.settingsForceStereo.checked,
+      audio_normalize:     DOM.settingsAudioNormalize.checked,
       needs_optimize_bitrate_threshold_kbps: DOM.settingsThreshold.value ? threshold : null,
       flag_av1:            DOM.settingsFlagAv1.checked,
       web_ui_enabled:      DOM.settingsWebUiEnabled.checked,
@@ -1628,6 +2034,72 @@ function switchSettingsTab(tab) {
   document.querySelectorAll('.settings-tab-content').forEach(div => {
     div.classList.toggle('active', div.id === `stab-${tab}`);
   });
+  if (tab === 'database') loadOptimizedFiles();
+  if (tab === 'presets')  loadPresetsTab();
+}
+
+// ---------------------------------------------------------------------------
+// Database tab — optimized files list
+// ---------------------------------------------------------------------------
+
+async function loadOptimizedFiles() {
+  const list = $('db-optimized-list');
+  const reflagAllBtn = $('db-reflag-all-btn');
+  list.innerHTML = '<div class="db-empty db-loading">Loading…</div>';
+  try {
+    const files = await GET('/api/optimized-files');
+    if (files.length === 0) {
+      list.innerHTML = '<div class="db-empty">No optimized files yet.</div>';
+      reflagAllBtn.style.display = 'none';
+      return;
+    }
+    reflagAllBtn.style.display = '';
+    list.innerHTML = '';
+    for (const f of files) {
+      const row = document.createElement('div');
+      row.className = 'db-file-row';
+      row.dataset.fileId = f.id;
+      const date = f.last_optimized_at ? f.last_optimized_at.replace('T', ' ').slice(0, 16) : '—';
+      const flagged = f.needs_optimize === 1;
+      row.innerHTML = `
+        <div class="db-file-info">
+          <span class="db-file-name" title="${escHtml(f.path)}">${escHtml(f.filename)}</span>
+          <span class="db-file-meta">${f.video_codec?.toUpperCase() ?? '—'} · ${f.bitrate_kbps ? Math.round(f.bitrate_kbps / 1000) + ' Mbps' : '—'} · ${f.last_job_type} · ${date}</span>
+        </div>
+        <button class="btn-db-reflag ${flagged ? 'btn-db-reflag-active' : ''}" data-file-id="${f.id}" ${flagged ? 'disabled' : ''}>
+          ${flagged ? 'Flagged' : 'Re-flag'}
+        </button>`;
+      list.appendChild(row);
+    }
+    list.querySelectorAll('.btn-db-reflag:not([disabled])').forEach(btn => {
+      btn.addEventListener('click', () => reflagFile(parseInt(btn.dataset.fileId, 10), btn));
+    });
+  } catch (e) {
+    list.innerHTML = `<div class="db-empty db-error">Failed to load: ${e.message}</div>`;
+    reflagAllBtn.style.display = 'none';
+  }
+}
+
+async function reflagFile(fileId, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try {
+    await POST(`/api/files/${fileId}/reflag`, {});
+    if (btn) { btn.textContent = 'Flagged'; btn.classList.add('btn-db-reflag-active'); }
+    // Update main file list if visible
+    const f = state.files.find(f => f.id === fileId);
+    if (f) { f.needs_optimize = 1; renderTable(); }
+    fetchFlaggedFiles();
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Re-flag'; }
+    console.error('reflag failed', e);
+  }
+}
+
+async function reflagAllOptimized() {
+  const btns = document.querySelectorAll('#db-optimized-list .btn-db-reflag:not([disabled])');
+  for (const btn of btns) {
+    await reflagFile(parseInt(btn.dataset.fileId, 10), btn);
+  }
 }
 
 function bindSettingsModal() {
@@ -1663,12 +2135,14 @@ function bindSettingsModal() {
 // About modal — dynamic content from current settings
 // ---------------------------------------------------------------------------
 
-const _ABOUT_HW_NAMES  = { nvenc: 'NVIDIA NVENC', qsv: 'Intel Quick Sync', amf: 'AMD AMF' };
-const _ABOUT_CODEC_NAMES = { hevc: 'HEVC (H.265)', av1: 'AV1', h264: 'H.264 (AVC)' };
+const _ABOUT_HW_NAMES  = { nvenc: 'NVIDIA NVENC', qsv: 'Intel Quick Sync', amf: 'AMD AMF', vaapi: 'VA-API', software: 'Software (CPU)' };
+const _ABOUT_CODEC_NAMES = { hevc: 'HEVC (H.265)', av1: 'AV1', h264: 'H.264 (AVC)', vp9: 'VP9' };
 const _ABOUT_FFMPEG_ENC = {
-  nvenc: { hevc: 'hevc_nvenc', av1: 'av1_nvenc', h264: 'h264_nvenc' },
-  qsv:   { hevc: 'hevc_qsv',  av1: 'av1_qsv',   h264: 'h264_qsv'  },
-  amf:   { hevc: 'hevc_amf',  av1: 'av1_amf',    h264: 'h264_amf'  },
+  nvenc:    { hevc: 'hevc_nvenc',  av1: 'av1_nvenc',  h264: 'h264_nvenc', vp9: 'libvpx-vp9' },
+  qsv:      { hevc: 'hevc_qsv',   av1: 'av1_qsv',    h264: 'h264_qsv',   vp9: 'libvpx-vp9' },
+  amf:      { hevc: 'hevc_amf',   av1: 'av1_amf',    h264: 'h264_amf',   vp9: 'libvpx-vp9' },
+  vaapi:    { hevc: 'hevc_vaapi', av1: 'av1_vaapi',   h264: 'h264_vaapi', vp9: 'libvpx-vp9' },
+  software: { hevc: 'libx265',    av1: 'libsvtav1',   h264: 'libx264',    vp9: 'libvpx-vp9' },
 };
 const _ABOUT_LANG_NAMES = {
   eng: 'English', jpn: 'Japanese', fre: 'French',    ger: 'German',
@@ -1677,13 +2151,20 @@ const _ABOUT_LANG_NAMES = {
 };
 
 function renderAboutHtml(s) {
-  const hw        = s.hw_encoder          || 'nvenc';
-  const codec     = s.output_video_codec  || 'hevc';
-  const cq        = s.video_quality_cq    ?? 24;
-  const audioAct  = s.audio_lossy_action  || 'opus';
-  const langs     = s.audio_languages     || [];
-  const flagAv1   = s.flag_av1            !== false;
-  const threshold = s.needs_optimize_bitrate_threshold_kbps || 25000;
+  const hw           = s.hw_encoder          || 'nvenc';
+  const codec        = s.output_video_codec  || 'hevc';
+  const cq           = s.video_quality_cq    ?? 24;
+  const audioAct     = s.audio_lossy_action  || 'opus';
+  const langs        = s.audio_languages     || [];
+  const flagAv1      = s.flag_av1            !== false;
+  const threshold    = s.needs_optimize_bitrate_threshold_kbps || 25000;
+  const container    = s.output_container    || 'mkv';
+  const scaleHeight  = s.scale_height        || null;
+  const pixFmt       = s.pix_fmt             || 'auto';
+  const encSpeed     = s.encoder_speed       || 'medium';
+  const forceStereo  = !!s.force_stereo;
+  const normalize    = !!s.audio_normalize;
+  const subtitleMode = s.subtitle_mode       || 'copy';
 
   const hwName    = _ABOUT_HW_NAMES[hw]   || hw.toUpperCase();
   const codecName = _ABOUT_CODEC_NAMES[codec] || codec.toUpperCase();
@@ -1694,9 +2175,22 @@ function renderAboutHtml(s) {
     : langs.map(l => _ABOUT_LANG_NAMES[l] || l.toUpperCase()).join(', ');
 
   // Per-encoder quality description
-  const qualDesc = hw === 'nvenc' ? `VBR CQ ${cq}, preset p4`
-                 : hw === 'qsv'   ? `global_quality ${cq}, look-ahead enabled`
-                 :                  `CQP ${cq}, balanced preset`;
+  const qualDesc = codec === 'vp9'   ? `CQ ${cq} (libvpx-vp9 — CPU encode regardless of hardware setting)`
+                 : hw === 'nvenc'    ? `VBR CQ ${cq}, preset p4`
+                 : hw === 'qsv'      ? `global_quality ${cq}, look-ahead enabled`
+                 : hw === 'software' ? `CRF ${cq}`
+                 :                     `CQP ${cq}, balanced preset`;
+
+  // Video detail extras
+  const scaleDesc    = scaleHeight ? `downscaled to <strong>${scaleHeight}p</strong> (aspect preserved)` : 'original resolution';
+  const pixFmtDesc   = pixFmt !== 'auto' ? `, forced pixel format <code>${pixFmt}</code>` : '';
+  const speedDesc    = `, encoder speed <strong>${encSpeed}</strong>`;
+  const containerDesc = container === 'mp4'  ? 'MP4 (AAC audio, no subtitles)'
+                      : container === 'webm' ? 'WebM'
+                      :                        'MKV';
+
+  // Output path description
+  const outputDesc = `Encoded to a temporary <code>.new.${container}</code> alongside the original by default. On success the original is deleted and the new file takes its place. If an output directory is set via the Encode modal, the file is written directly to that directory and the original is always kept.`;
 
   // Audio lossy row
   const audioLossyVal = audioAct === 'copy'
@@ -1724,7 +2218,7 @@ function renderAboutHtml(s) {
   return `
     <div class="about-section">
       <div class="about-section-title">What is Conduit?</div>
-      <p class="about-text">Conduit scans your media folders, extracts technical metadata from every video file using <strong>ffprobe</strong>, and surfaces files that would benefit from re-encoding. It then encodes selected files with <strong>ffmpeg</strong> using <strong>${hwName}</strong> hardware acceleration (<code>${ffEnc}</code>), replacing originals in-place.</p>
+      <p class="about-text">Conduit scans your media folders, extracts technical metadata from every video file using <strong>ffprobe</strong>, and surfaces files that would benefit from re-encoding. It then encodes selected files with <strong>ffmpeg</strong> using <strong>${hwName}</strong> (<code>${ffEnc}</code>), replacing originals in-place. The <strong>Encode</strong> button lets you queue any files with custom per-batch settings and a chosen output directory. <strong>Presets</strong> let you save and reuse encode configurations — a built-in <em>Tower Unite</em> preset (VP9/WebM) is included.</p>
     </div>
 
     <div class="about-section">
@@ -1740,17 +2234,21 @@ function renderAboutHtml(s) {
 
     <div class="about-section">
       <div class="about-section-title">How Optimization Works</div>
-      ${row('Video', `Re-encoded to <strong>${codecName}</strong> using <code>${ffEnc}</code> (${hwName}). ${qualDesc}, main10 profile — preserves 10-bit content and HDR10 color metadata.`)}
+      ${row('Video', `Re-encoded to <strong>${codecName}</strong> using <code>${ffEnc}</code> (${hwName}). ${qualDesc}${speedDesc}${pixFmtDesc}, ${scaleDesc}, main10 profile — preserves 10-bit content and HDR10 color metadata.`)}
+      ${row('Container', `Output written as <strong>${containerDesc}</strong>. MP4 forces AAC audio and drops subtitles. WebM requires VP9.`)}
       ${row('Audio (lossy)', audioLossyVal)}
       ${row('Audio (lossless)', 'TrueHD, DTS-HD MA, FLAC, and PCM tracks are <strong>copied without re-encoding</strong> to avoid any quality loss.')}
+      ${forceStereo ? row('Force Stereo', 'All audio tracks are <strong>downmixed to stereo (2.0)</strong>.') : ''}
+      ${normalize   ? row('Normalization', 'EBU R128 loudness normalization applied — target <strong>−23 LUFS</strong>, true peak <strong>−2 dBTP</strong>.') : ''}
+      ${row('Subtitles', subtitleMode === 'drop' ? 'All subtitle tracks are <strong>dropped</strong>.' : 'Subtitle tracks are <strong>copied</strong> (pass-through, filtered by language).')}
       ${row('Track Selection', `Keeping <strong>${langLabel}</strong>. If no matching track is found, the first audio track is kept as a fallback. Applies to subtitles too. DVB teletext/subtitle tracks are always dropped.`)}
-      ${row('Output', 'Encoded to a temporary <code>.new.mkv</code> alongside the original. On success, the original is deleted and the new file is renamed to replace it. If encoding fails, the temporary file is removed and the original is untouched.')}
+      ${row('Output', outputDesc)}
     </div>
 
     <div class="about-section">
       <div class="about-section-title">HDR Handling</div>
       ${row('HDR10', `Fully preserved through ${codecName} re-encoding. Color space, transfer function, and mastering display metadata are passed through regardless of which hardware encoder is used.`)}
-      ${row('HDR10+ / Dolby Vision', `Dynamic HDR metadata <strong>cannot survive re-encoding</strong> on any hardware encoder. You are prompted to choose: <em>Remux</em> (copy video stream, preserve all metadata, re-encode audio only) or <em>Re-encode</em> (full ${codecName} encode, dynamic HDR is lost, falls back to HDR10 or SDR).`)}
+      ${row('HDR10+ / Dolby Vision', `Dynamic HDR metadata <strong>cannot survive re-encoding</strong> on any hardware encoder. You are prompted to choose: <em>Remux</em> (copy video stream, preserve all metadata, re-encode audio only) or <em>Re-encode</em> (full ${codecName} encode, dynamic HDR is lost, falls back to HDR10 or SDR). This prompt also appears when using the Encode button.`)}
       ${row('Remux', 'The video stream is copied byte-for-byte with no quality loss and no GPU required. Only audio is re-encoded. Fastest option — useful when the file is already in a good codec but has large or lossy audio tracks.')}
     </div>`;
 }
@@ -1779,24 +2277,52 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Bind HDR modal buttons now that DOM is ready
   DOM.hdrRemuxBtn.addEventListener('click', () => {
     closeModal('hdr-modal');
+    const ko  = state._pendingKeepOriginal;
+    const ov  = state._pendingEncodeOverrides || null;
     const jobs = [];
     if (state._pendingHdrFileIds.length > 0) {
-      jobs.push(submitJobs(state._pendingHdrFileIds, 'remux'));
+      jobs.push(submitJobs(state._pendingHdrFileIds, 'remux', ko, ov));
     }
     if (state._pendingNonHdrFileIds.length > 0) {
-      jobs.push(submitJobs(state._pendingNonHdrFileIds, 'encode'));
+      jobs.push(submitJobs(state._pendingNonHdrFileIds, 'encode', ko, ov));
     }
     Promise.all(jobs);
     state._pendingHdrFileIds = [];
     state._pendingNonHdrFileIds = [];
+    state._pendingEncodeOverrides = null;
   });
 
   DOM.hdrReencodeBtn.addEventListener('click', () => {
     closeModal('hdr-modal');
     const allIds = [...state._pendingHdrFileIds, ...state._pendingNonHdrFileIds];
-    submitJobs(allIds, 'encode');
+    const ov = state._pendingEncodeOverrides || null;
+    submitJobs(allIds, 'encode', state._pendingKeepOriginal, ov);
     state._pendingHdrFileIds = [];
     state._pendingNonHdrFileIds = [];
+    state._pendingEncodeOverrides = null;
+  });
+
+  // Bind optimize confirmation modal buttons
+  DOM.optimizeReplaceBtn.addEventListener('click', () => {
+    closeModal('optimize-confirm-modal');
+    state._pendingKeepOriginal = false;
+    if (state._pendingHdrFileIds.length > 0) {
+      showHdrModal(state.files.filter(f => state._pendingHdrFileIds.includes(f.id)));
+    } else {
+      submitJobs(state._pendingNonHdrFileIds, 'encode', false);
+      state._pendingNonHdrFileIds = [];
+    }
+  });
+
+  DOM.optimizeKeepBtn.addEventListener('click', () => {
+    closeModal('optimize-confirm-modal');
+    state._pendingKeepOriginal = true;
+    if (state._pendingHdrFileIds.length > 0) {
+      showHdrModal(state.files.filter(f => state._pendingHdrFileIds.includes(f.id)));
+    } else {
+      submitJobs(state._pendingNonHdrFileIds, 'encode', true);
+      state._pendingNonHdrFileIds = [];
+    }
   });
 
   // Close flag popover on outside click
@@ -1805,6 +2331,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       hideFlagPopover();
     }
   });
+
+  $('db-reflag-all-btn').addEventListener('click', reflagAllOptimized);
 
   bindModals();
   bindSettingsModal();
@@ -1823,6 +2351,41 @@ document.addEventListener('DOMContentLoaded', async () => {
   DOM.drawerClose.addEventListener('click', closeFileDetail);
 
   DOM.optimizeBtn.addEventListener('click', handleOptimize);
+  DOM.encodeBtn.addEventListener('click', handleCustomEncode);
+
+  // Custom encode modal bindings
+  DOM.ceCq.addEventListener('input', () => { DOM.ceCqDisplay.textContent = DOM.ceCq.value; });
+  DOM.ceReplaceBtn.addEventListener('click', () => _ceSetKeepOriginal(false));
+  DOM.ceKeepBtn.addEventListener('click', () => _ceSetKeepOriginal(true));
+  DOM.ceHdrRemuxBtn.addEventListener('click', () => _ceSetHdrAction('remux'));
+  DOM.ceHdrReencodeBtn.addEventListener('click', () => _ceSetHdrAction('reencode'));
+  DOM.ceSubmitBtn.addEventListener('click', _submitCustomEncode);
+
+  DOM.ceBrowseBtn.addEventListener('click', async () => {
+    if (window.pywebview?.api?.pick_folder) {
+      const dir = await window.pywebview.api.pick_folder();
+      if (dir) _ceSetOutputDir(dir);
+    } else {
+      // Web UI fallback: let user type a path
+      const dir = prompt('Enter output folder path:');
+      if (dir?.trim()) _ceSetOutputDir(dir.trim());
+    }
+  });
+
+  DOM.ceClearDirBtn.addEventListener('click', () => _ceSetOutputDir(null));
+
+  DOM.cePreset.addEventListener('change', () => {
+    const id = DOM.cePreset.value;
+    if (!id) return;
+    const preset = _presetsCache?.find(p => p.id === id);
+    if (preset) _ceApplySettings(preset);
+  });
+
+  // Preset editor bindings
+  $('preset-new-btn').addEventListener('click', () => _openPresetEditor(null));
+  $('pe-cancel-btn').addEventListener('click', () => $('preset-editor').classList.add('hidden'));
+  $('pe-save-btn').addEventListener('click', _savePreset);
+  $('pe-cq').addEventListener('input', () => { $('pe-cq-display').textContent = $('pe-cq').value; });
 
   // Restore persisted filters/sort before fetching
   loadFiltersFromStorage();

@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import time
+import uuid
 from pathlib import Path
 from typing import Optional
 
@@ -44,9 +45,40 @@ OUTPUT_VIDEO_CODEC  = CONFIG.get("output_video_codec", "hevc")
 VIDEO_QUALITY_CQ    = CONFIG.get("video_quality_cq", 24)
 AUDIO_LOSSY_ACTION  = CONFIG.get("audio_lossy_action", "opus")
 AUDIO_LANGUAGES     = CONFIG.get("audio_languages", ["eng", "jpn"])
+OUTPUT_CONTAINER    = CONFIG.get("output_container", "mkv")
+SCALE_HEIGHT: Optional[int] = CONFIG.get("scale_height", None)
+PIX_FMT: str        = CONFIG.get("pix_fmt", "auto")
+ENCODER_SPEED: str  = CONFIG.get("encoder_speed", "medium")
+FORCE_STEREO: bool  = CONFIG.get("force_stereo", False)
+AUDIO_NORMALIZE: bool = CONFIG.get("audio_normalize", False)
+SUBTITLE_MODE: str  = CONFIG.get("subtitle_mode", "copy")
 WEB_UI_ENABLED      = CONFIG.get("web_ui_enabled", False)
 WEB_UI_HOST         = CONFIG.get("web_ui_host", "0.0.0.0")
 WEB_UI_PORT         = CONFIG.get("web_ui_port", 8000)
+USER_PRESETS: list  = CONFIG.get("user_presets", [])
+
+# Built-in presets (read-only)
+BUILTIN_PRESETS = [
+    {
+        "id": "builtin-tower-unite",
+        "name": "Tower Unite",
+        "hw_encoder": "software",
+        "output_video_codec": "vp9",
+        "video_quality_cq": 31,
+        "audio_lossy_action": "opus",
+        "output_container": "webm",
+        "builtin": True,
+        "description": "VP9 + Opus in WebM. Required for synced playback in Tower Unite condos without CEFCodecFix.",
+    },
+]
+
+
+def _save_config():
+    config = load_config()
+    config["user_presets"] = USER_PRESETS
+    with open(_CONFIG_PATH, "w") as f:
+        json.dump(config, f, indent=2)
+
 
 # ---------------------------------------------------------------------------
 # App
@@ -70,8 +102,10 @@ def on_startup():
     init_db()
     startup_cleanup()
     set_hw_encoder(HW_ENCODER)
-    set_encode_options(OUTPUT_VIDEO_CODEC, VIDEO_QUALITY_CQ, AUDIO_LOSSY_ACTION, AUDIO_LANGUAGES)
+    set_encode_options(OUTPUT_VIDEO_CODEC, VIDEO_QUALITY_CQ, AUDIO_LOSSY_ACTION, AUDIO_LANGUAGES, OUTPUT_CONTAINER,
+                       SCALE_HEIGHT, PIX_FMT, ENCODER_SPEED, FORCE_STEREO, AUDIO_NORMALIZE, SUBTITLE_MODE)
     start_encoder_thread(FFMPEG_PATH)
+
 
 
 # ---------------------------------------------------------------------------
@@ -84,19 +118,49 @@ class AddFolderRequest(BaseModel):
 
 class AddJobsRequest(BaseModel):
     file_ids: list[int]
-    job_type: str = "encode"   # 'encode' or 'remux'
+    job_type: str = "encode"                    # 'encode' or 'remux'
+    keep_original: bool = False                 # keep original file after encode
+    # Per-job encoder overrides (None = use global setting)
+    hw_encoder: Optional[str] = None            # nvenc | qsv | amf | vaapi | software
+    output_video_codec: Optional[str] = None    # hevc | av1 | h264 | vp9
+    video_quality_cq: Optional[int] = None      # 0–51
+    audio_lossy_action: Optional[str] = None    # opus | aac | copy
+    output_container: Optional[str] = None      # mkv | mp4 | webm
+    scale_height: Optional[int] = None          # None | 2160 | 1080 | 720 | 480
+    pix_fmt: Optional[str] = None               # auto | yuv420p | yuv420p10le
+    encoder_speed: Optional[str] = None         # fast | medium | slow | veryslow
+    force_stereo: Optional[bool] = None
+    audio_normalize: Optional[bool] = None
+    subtitle_mode: Optional[str] = None         # copy | strip
+    output_dir: Optional[str] = None            # directory to write output files into
+
+
+class PresetRequest(BaseModel):
+    name: str
+    hw_encoder: str = "nvenc"
+    output_video_codec: str = "hevc"
+    video_quality_cq: int = 24
+    audio_lossy_action: str = "opus"
+    output_container: str = "mkv"
 
 
 class UpdateSettingsRequest(BaseModel):
     ffmpeg_path: Optional[str] = None
     ffprobe_path: Optional[str] = None
     needs_optimize_bitrate_threshold_kbps: Optional[int] = None
-    hw_encoder: Optional[str] = None          # nvenc | qsv | amf
+    hw_encoder: Optional[str] = None          # nvenc | qsv | amf | vaapi | software
     flag_av1: Optional[bool] = None
-    output_video_codec: Optional[str] = None  # hevc | av1 | h264
+    output_video_codec: Optional[str] = None  # hevc | av1 | h264 | vp9
     video_quality_cq: Optional[int] = None    # 0–51
     audio_lossy_action: Optional[str] = None  # opus | aac | copy
     audio_languages: Optional[list] = None    # [] = keep all
+    output_container: Optional[str] = None    # mkv | mp4 | webm
+    scale_height: Optional[int] = None        # None | 2160 | 1080 | 720 | 480
+    pix_fmt: Optional[str] = None             # auto | yuv420p | yuv420p10le
+    encoder_speed: Optional[str] = None       # fast | medium | slow | veryslow
+    force_stereo: Optional[bool] = None
+    audio_normalize: Optional[bool] = None
+    subtitle_mode: Optional[str] = None       # copy | strip
     web_ui_enabled: Optional[bool] = None
     web_ui_host: Optional[str] = None
     web_ui_port: Optional[int] = None
@@ -118,6 +182,13 @@ def get_settings():
         "video_quality_cq": VIDEO_QUALITY_CQ,
         "audio_lossy_action": AUDIO_LOSSY_ACTION,
         "audio_languages": AUDIO_LANGUAGES,
+        "output_container": OUTPUT_CONTAINER,
+        "scale_height": SCALE_HEIGHT,
+        "pix_fmt": PIX_FMT,
+        "encoder_speed": ENCODER_SPEED,
+        "force_stereo": FORCE_STEREO,
+        "audio_normalize": AUDIO_NORMALIZE,
+        "subtitle_mode": SUBTITLE_MODE,
         "port": PORT,
         "web_ui_enabled": WEB_UI_ENABLED,
         "web_ui_host": WEB_UI_HOST,
@@ -129,6 +200,8 @@ def get_settings():
 def update_settings(req: UpdateSettingsRequest):
     global FFMPEG_PATH, FFPROBE_PATH, THRESHOLD_KBPS, HW_ENCODER, FLAG_AV1
     global OUTPUT_VIDEO_CODEC, VIDEO_QUALITY_CQ, AUDIO_LOSSY_ACTION, AUDIO_LANGUAGES
+    global OUTPUT_CONTAINER, SCALE_HEIGHT, PIX_FMT, ENCODER_SPEED
+    global FORCE_STEREO, AUDIO_NORMALIZE, SUBTITLE_MODE
     global WEB_UI_ENABLED, WEB_UI_HOST, WEB_UI_PORT
     config = load_config()
 
@@ -141,7 +214,7 @@ def update_settings(req: UpdateSettingsRequest):
     if req.needs_optimize_bitrate_threshold_kbps is not None:
         THRESHOLD_KBPS = req.needs_optimize_bitrate_threshold_kbps
         config["needs_optimize_bitrate_threshold_kbps"] = req.needs_optimize_bitrate_threshold_kbps
-    if req.hw_encoder is not None and req.hw_encoder in ("nvenc", "qsv", "amf"):
+    if req.hw_encoder is not None and req.hw_encoder in ("nvenc", "qsv", "amf", "vaapi", "software"):
         HW_ENCODER = req.hw_encoder
         config["hw_encoder"] = req.hw_encoder
         set_hw_encoder(req.hw_encoder)
@@ -160,7 +233,7 @@ def update_settings(req: UpdateSettingsRequest):
         conn.close()
 
     encode_changed = False
-    if req.output_video_codec is not None and req.output_video_codec in ("hevc", "av1", "h264"):
+    if req.output_video_codec is not None and req.output_video_codec in ("hevc", "av1", "h264", "vp9"):
         OUTPUT_VIDEO_CODEC = req.output_video_codec
         config["output_video_codec"] = req.output_video_codec
         encode_changed = True
@@ -176,8 +249,37 @@ def update_settings(req: UpdateSettingsRequest):
         AUDIO_LANGUAGES = req.audio_languages
         config["audio_languages"] = req.audio_languages
         encode_changed = True
+    if req.output_container is not None and req.output_container in ("mkv", "mp4", "webm"):
+        OUTPUT_CONTAINER = req.output_container
+        config["output_container"] = req.output_container
+        encode_changed = True
+    if req.scale_height is not None:
+        SCALE_HEIGHT = req.scale_height if req.scale_height > 0 else None
+        config["scale_height"] = SCALE_HEIGHT
+        encode_changed = True
+    if req.pix_fmt is not None and req.pix_fmt in ("auto", "yuv420p", "yuv420p10le"):
+        PIX_FMT = req.pix_fmt
+        config["pix_fmt"] = req.pix_fmt
+        encode_changed = True
+    if req.encoder_speed is not None and req.encoder_speed in ("fast", "medium", "slow", "veryslow"):
+        ENCODER_SPEED = req.encoder_speed
+        config["encoder_speed"] = req.encoder_speed
+        encode_changed = True
+    if req.force_stereo is not None:
+        FORCE_STEREO = req.force_stereo
+        config["force_stereo"] = req.force_stereo
+        encode_changed = True
+    if req.audio_normalize is not None:
+        AUDIO_NORMALIZE = req.audio_normalize
+        config["audio_normalize"] = req.audio_normalize
+        encode_changed = True
+    if req.subtitle_mode is not None and req.subtitle_mode in ("copy", "strip"):
+        SUBTITLE_MODE = req.subtitle_mode
+        config["subtitle_mode"] = req.subtitle_mode
+        encode_changed = True
     if encode_changed:
-        set_encode_options(OUTPUT_VIDEO_CODEC, VIDEO_QUALITY_CQ, AUDIO_LOSSY_ACTION, AUDIO_LANGUAGES)
+        set_encode_options(OUTPUT_VIDEO_CODEC, VIDEO_QUALITY_CQ, AUDIO_LOSSY_ACTION, AUDIO_LANGUAGES, OUTPUT_CONTAINER,
+                           SCALE_HEIGHT, PIX_FMT, ENCODER_SPEED, FORCE_STEREO, AUDIO_NORMALIZE, SUBTITLE_MODE)
 
     if req.web_ui_enabled is not None:
         WEB_UI_ENABLED = req.web_ui_enabled
@@ -423,8 +525,21 @@ def create_jobs(req: AddJobsRequest):
         if existing:
             continue
         cur = conn.execute(
-            "INSERT INTO jobs (file_id, job_type) VALUES (?, ?)",
-            (file_id, req.job_type),
+            """INSERT INTO jobs
+               (file_id, job_type, keep_original,
+                hw_encoder, output_video_codec, video_quality_cq,
+                audio_lossy_action, output_container,
+                scale_height, pix_fmt, encoder_speed,
+                force_stereo, audio_normalize, subtitle_mode,
+                output_dir)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (file_id, req.job_type, 1 if req.keep_original else 0,
+             req.hw_encoder, req.output_video_codec,
+             req.video_quality_cq, req.audio_lossy_action, req.output_container,
+             req.scale_height, req.pix_fmt, req.encoder_speed,
+             1 if req.force_stereo else (0 if req.force_stereo is not None else None),
+             1 if req.audio_normalize else (0 if req.audio_normalize is not None else None),
+             req.subtitle_mode, req.output_dir),
         )
         created.append(cur.lastrowid)
 
@@ -456,6 +571,97 @@ def cancel_job(job_id: int):
     conn.execute("DELETE FROM jobs WHERE id=?", (job_id,))
     conn.commit()
     conn.close()
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Optimized files / database management
+# ---------------------------------------------------------------------------
+
+@app.get("/api/optimized-files")
+def list_optimized_files():
+    """Files that have had at least one completed encode/remux job."""
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT f.id, f.filename, f.path, f.bitrate_kbps, f.video_codec,
+               f.needs_optimize, f.size_bytes,
+               MAX(j.finished_at) AS last_optimized_at,
+               j.job_type AS last_job_type
+        FROM files f
+        JOIN jobs j ON j.file_id = f.id
+        WHERE j.status = 'done'
+        GROUP BY f.id
+        ORDER BY last_optimized_at DESC
+    """).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@app.post("/api/files/{file_id}/reflag")
+def reflag_file(file_id: int):
+    """Mark a file as needing optimization again."""
+    conn = get_db()
+    row = conn.execute("SELECT id FROM files WHERE id=?", (file_id,)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="File not found")
+    conn.execute("UPDATE files SET needs_optimize=1 WHERE id=?", (file_id,))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Presets
+# ---------------------------------------------------------------------------
+
+@app.get("/api/presets")
+def list_presets():
+    return {"builtin": BUILTIN_PRESETS, "user": USER_PRESETS}
+
+
+@app.post("/api/presets", status_code=201)
+def create_preset(req: PresetRequest):
+    global USER_PRESETS
+    preset = {
+        "id": str(uuid.uuid4()),
+        "name": req.name,
+        "hw_encoder": req.hw_encoder,
+        "output_video_codec": req.output_video_codec,
+        "video_quality_cq": req.video_quality_cq,
+        "audio_lossy_action": req.audio_lossy_action,
+        "output_container": req.output_container,
+        "builtin": False,
+    }
+    USER_PRESETS.append(preset)
+    _save_config()
+    return preset
+
+
+@app.put("/api/presets/{preset_id}")
+def update_preset(preset_id: str, req: PresetRequest):
+    global USER_PRESETS
+    for p in USER_PRESETS:
+        if p["id"] == preset_id:
+            p["name"] = req.name
+            p["hw_encoder"] = req.hw_encoder
+            p["output_video_codec"] = req.output_video_codec
+            p["video_quality_cq"] = req.video_quality_cq
+            p["audio_lossy_action"] = req.audio_lossy_action
+            p["output_container"] = req.output_container
+            _save_config()
+            return p
+    raise HTTPException(status_code=404, detail="Preset not found")
+
+
+@app.delete("/api/presets/{preset_id}")
+def delete_preset(preset_id: str):
+    global USER_PRESETS
+    before = len(USER_PRESETS)
+    USER_PRESETS = [p for p in USER_PRESETS if p["id"] != preset_id]
+    if len(USER_PRESETS) == before:
+        raise HTTPException(status_code=404, detail="Preset not found")
+    _save_config()
     return {"ok": True}
 
 

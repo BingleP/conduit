@@ -8,9 +8,11 @@ A desktop application for scanning your video library, identifying files that wo
 
 - **Scans** media folders and extracts technical metadata from every video file using `ffprobe`
 - **Flags** files that need optimization based on configurable rules (high bitrate, H.264 Hi10P, AV1)
-- **Encodes** flagged files using hardware-accelerated ffmpeg, replacing the original in-place
+- **Encodes** flagged files using hardware-accelerated (or software) ffmpeg, with configurable codec, quality, container, resolution, and audio options
 - **Remuxes** files into MKV without re-encoding when appropriate (e.g. HDR content)
 - **Filters** audio and subtitle tracks by language, re-encodes lossy audio to Opus/AAC, copies lossless tracks
+- **Custom Encode** — queue any selection of files with per-batch overrides and a custom output directory
+- **Presets** — save and reuse custom encode configurations; includes a built-in Tower Unite preset
 
 Runs as a desktop app (native window via pywebview) with an optional Web UI for network access.
 
@@ -21,10 +23,12 @@ Runs as a desktop app (native window via pywebview) with an optional Web UI for 
 - Linux (Arch, Debian/Ubuntu, Fedora, openSUSE)
 - Python 3.10+
 - ffmpeg and ffprobe
-- A supported GPU for hardware encoding:
+- A supported GPU **or** CPU for encoding:
   - **NVIDIA** — GTX 900 series or newer (NVENC)
   - **Intel** — 6th gen Core or newer (Quick Sync)
   - **AMD** — RX 400 series or newer (AMF)
+  - **VA-API** — any GPU with VA-API support (no vendor-specific drivers required)
+  - **Software (CPU)** — no GPU needed; uses libx265 / libsvtav1 / libx264 / libvpx-vp9
 
 ---
 
@@ -151,7 +155,7 @@ All settings are accessible from the gear icon in the top-right corner of the ap
 
 | Setting | Description | Default |
 |---|---|---|
-| Hardware Accelerator | GPU backend: `nvenc` (NVIDIA), `qsv` (Intel), `amf` (AMD) | `nvenc` |
+| Hardware Accelerator | GPU/CPU backend: `nvenc` (NVIDIA), `qsv` (Intel), `amf` (AMD), `vaapi` (VA-API), `software` (CPU) | `nvenc` |
 | ffmpeg Path | Path to ffmpeg binary | `ffmpeg` |
 | ffprobe Path | Path to ffprobe binary | `ffprobe` |
 
@@ -159,8 +163,17 @@ All settings are accessible from the gear icon in the top-right corner of the ap
 
 | Setting | Description | Default |
 |---|---|---|
-| Output Codec | Target codec: HEVC, AV1, or H.264 | `hevc` |
+| Output Codec | Target codec: HEVC, AV1, H.264, or VP9 | `hevc` |
 | Quality (CQ/QP) | Encode quality. Lower = better quality, larger file | `24` |
+| Output Container | Container format for encoded files: MKV, MP4, or WebM | `mkv` |
+| Scale Height | Downscale video to this height (e.g. 1080, 720). Aspect ratio is preserved. `Auto` leaves resolution unchanged | `auto` |
+| Pixel Format | Force a specific pixel format (e.g. `yuv420p` for maximum compatibility). `Auto` preserves the source pixel format | `auto` |
+| Encoder Speed | Speed/quality trade-off preset (slow → fast). Faster presets encode quicker at the cost of slightly larger files | `medium` |
+| Subtitle Mode | How to handle subtitle tracks: `copy` (pass through unchanged) or `drop` (remove all subtitles) | `copy` |
+
+**VP9** always uses `libvpx-vp9` regardless of the hardware accelerator setting, as VP9 hardware encoding is not widely supported.
+
+**MP4 container** forces AAC audio (Opus is not compatible with MP4) and strips subtitle and attachment tracks.
 
 ### Audio
 
@@ -168,8 +181,10 @@ All settings are accessible from the gear icon in the top-right corner of the ap
 |---|---|---|
 | Lossy Track Handling | What to do with lossy audio: re-encode to Opus, AAC, or copy | `opus` |
 | Keep Audio Languages | Which language tracks to include in the output | `eng`, `jpn` |
+| Force Stereo Downmix | Downmix all audio tracks to stereo (2.0) | `off` |
+| Loudness Normalization | Apply EBU R128 loudness normalization (−23 LUFS, true peak −2 dBTP) | `off` |
 
-Lossless tracks (TrueHD, DTS-HD MA, FLAC, PCM) are always copied regardless of this setting. If no matching language track is found, the first audio track is kept as a fallback.
+Lossless tracks (TrueHD, DTS-HD MA, FLAC, PCM) are always copied regardless of the lossy handling setting. If no matching language track is found, the first audio track is kept as a fallback.
 
 ### Flagging
 
@@ -197,6 +212,54 @@ Network changes require a restart to take effect.
 
 ---
 
+## Presets
+
+The **Presets** tab (accessible from Settings) lets you save and reuse custom encode configurations.
+
+Each preset stores a full set of encode overrides — codec, quality, container, scale height, pixel format, encoder speed, audio action, force stereo, normalization, and subtitle mode. When you open the **Encode** modal, you can load any saved preset with one click, which fills in all the override fields at once.
+
+### Built-in preset: Tower Unite
+
+The **Tower Unite** preset is included by default. It targets VP9 / WebM, which is the format required for custom media in Tower Unite. Settings:
+
+- Codec: VP9
+- Container: WebM
+- Quality: 31
+- Scale Height: 1080
+- Pixel Format: yuv420p
+- Encoder Speed: good (VP9 naming)
+- Subtitle Mode: drop
+- Force Stereo: on
+
+---
+
+## Encode
+
+The **Encode** button (bottom-left of the main toolbar) opens a per-batch encode modal. It lets you queue a custom encode for any selected files with settings that override the global defaults for that batch only.
+
+### Per-batch overrides
+
+All video and audio settings available in the Settings panel can be overridden per-batch: codec, quality, container, scale height, pixel format, encoder speed, subtitle mode, force stereo, and loudness normalization.
+
+### Output location
+
+By default, encoded files are saved next to their source files (same directory). You can choose a different output directory using the **Browse** button.
+
+When an output directory is set:
+- The output filename is `{original_stem}{ext}` written directly into the chosen directory
+- The original file is **always kept** — it is never deleted or replaced, regardless of other settings
+- The keep/replace original option is hidden (not applicable)
+
+### Collision warning
+
+If multiple selected files share the same filename stem (name without extension) and would write to the same output directory, Conduit warns you before encoding starts. The warning lists every conflicting group of files. You can go back to change the selection or output directory, or encode anyway (the last file in each group will overwrite earlier ones).
+
+### HDR handling
+
+When the selection contains HDR files, a prompt appears asking whether to remux or re-encode them (same as normal optimization). Non-HDR files in the same batch are always encoded without prompting.
+
+---
+
 ## HDR content
 
 When you queue HDR files for optimization, Conduit prompts you to choose:
@@ -205,6 +268,14 @@ When you queue HDR files for optimization, Conduit prompts you to choose:
 - **Re-encode** — re-encodes with your configured settings. HDR metadata may be reduced to HDR10.
 
 For HDR content, remux is recommended unless file size reduction is the priority.
+
+---
+
+## Database
+
+The **Database** tab (accessible from Settings) shows all files that Conduit has previously encoded or remuxed. From here you can re-flag individual files (or all of them at once) so they appear again in the optimization queue.
+
+This is useful if you want to re-encode files that were already optimized — for example, after changing your quality settings or switching to a different codec.
 
 ---
 
@@ -228,4 +299,4 @@ systemctl --user daemon-reload
 
 ## Supported distros
 
-Tested on CachyOS. Should work on any Linux distro with Python 3.10+ and a compatible GPU. The install script handles package installation for Arch, Debian/Ubuntu, Fedora, and openSUSE. Other distros may require manually installing `python3-gobject` + `webkit2gtk` or `python3-pyqt6` + `qt6-webengine` before running `install.sh`.
+Tested on CachyOS. Should work on any Linux distro with Python 3.10+ and a compatible GPU or CPU. The install script handles package installation for Arch, Debian/Ubuntu, Fedora, and openSUSE. Other distros may require manually installing `python3-gobject` + `webkit2gtk` or `python3-pyqt6` + `qt6-webengine` before running `install.sh`.

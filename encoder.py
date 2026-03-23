@@ -59,16 +59,32 @@ _progress = EncodeProgress()
 _progress_lock = threading.Lock()
 _queue_changed = threading.Event()
 
-_hw_encoder: str = "nvenc"          # nvenc | qsv | amf
-_output_video_codec: str = "hevc"   # hevc | av1 | h264
+_hw_encoder: str = "nvenc"          # nvenc | qsv | amf | vaapi | software
+_output_video_codec: str = "hevc"   # hevc | av1 | h264 | vp9
 _video_quality_cq: int = 24         # 0–51; lower = better quality
 _audio_lossy_action: str = "opus"   # opus | aac | copy
 _audio_languages: list = ["eng", "jpn"]  # empty list = keep all languages
+_output_container: str = "mkv"      # mkv | mp4 | webm
+_scale_height: Optional[int] = None # None = keep original; 2160, 1080, 720, 480
+_pix_fmt: str = "auto"              # auto | yuv420p | yuv420p10le
+_encoder_speed: str = "medium"      # fast | medium | slow | veryslow
+_force_stereo: bool = False
+_audio_normalize: bool = False
+_subtitle_mode: str = "copy"        # copy | strip
+
+# Speed preset maps per encoder
+_SPEED_NVENC    = {"fast": "p2",      "medium": "p4",       "slow": "p6",      "veryslow": "p7"}
+_SPEED_QSV      = {"fast": "fast",    "medium": "medium",   "slow": "slow",    "veryslow": "slower"}
+_SPEED_AMF      = {"fast": "speed",   "medium": "balanced", "slow": "quality", "veryslow": "quality"}
+_SPEED_SW       = {"fast": "fast",    "medium": "medium",   "slow": "slow",    "veryslow": "veryslow"}
+_SPEED_SVT      = {"fast": "8",       "medium": "6",        "slow": "4",       "veryslow": "2"}
+_SPEED_VP9_CPU  = {"fast": "4",       "medium": "2",        "slow": "1",       "veryslow": "0"}
+_SPEED_VP9_DL   = {"fast": "good",    "medium": "good",     "slow": "best",    "veryslow": "best"}
 
 
 def set_hw_encoder(hw: str):
     global _hw_encoder
-    if hw in ("nvenc", "qsv", "amf"):
+    if hw in ("nvenc", "qsv", "amf", "vaapi", "software"):
         _hw_encoder = hw
 
 
@@ -77,9 +93,18 @@ def set_encode_options(
     video_quality_cq: int = None,
     audio_lossy_action: str = None,
     audio_languages: list = None,
+    output_container: str = None,
+    scale_height: int = None,
+    pix_fmt: str = None,
+    encoder_speed: str = None,
+    force_stereo: bool = None,
+    audio_normalize: bool = None,
+    subtitle_mode: str = None,
 ):
     global _output_video_codec, _video_quality_cq, _audio_lossy_action, _audio_languages
-    if output_video_codec in ("hevc", "av1", "h264"):
+    global _output_container, _scale_height, _pix_fmt, _encoder_speed
+    global _force_stereo, _audio_normalize, _subtitle_mode
+    if output_video_codec in ("hevc", "av1", "h264", "vp9"):
         _output_video_codec = output_video_codec
     if video_quality_cq is not None and 0 <= video_quality_cq <= 51:
         _video_quality_cq = video_quality_cq
@@ -87,6 +112,20 @@ def set_encode_options(
         _audio_lossy_action = audio_lossy_action
     if audio_languages is not None:
         _audio_languages = audio_languages
+    if output_container in ("mkv", "mp4", "webm"):
+        _output_container = output_container
+    if scale_height is not None:
+        _scale_height = scale_height if scale_height > 0 else None
+    if pix_fmt in ("auto", "yuv420p", "yuv420p10le"):
+        _pix_fmt = pix_fmt
+    if encoder_speed in ("fast", "medium", "slow", "veryslow"):
+        _encoder_speed = encoder_speed
+    if force_stereo is not None:
+        _force_stereo = bool(force_stereo)
+    if audio_normalize is not None:
+        _audio_normalize = bool(audio_normalize)
+    if subtitle_mode in ("copy", "strip"):
+        _subtitle_mode = subtitle_mode
 
 _log_lines: deque = deque(maxlen=2000)
 _log_lock = threading.Lock()
@@ -161,7 +200,8 @@ def _aac_bitrate(channels: int) -> str:
     return "96k"
 
 
-def _build_audio_args(audio_tracks: list, languages: list = None, lossy_action: str = "opus"):
+def _build_audio_args(audio_tracks: list, languages: list = None, lossy_action: str = "opus",
+                      force_stereo: bool = False, normalize: bool = False):
     """
     Select tracks based on configured languages, then encode according to lossy_action.
     Returns (args_list, has_jpn_in_selection).
@@ -192,18 +232,26 @@ def _build_audio_args(audio_tracks: list, languages: list = None, lossy_action: 
 
         args += ["-map", f"0:{stream_index}"]
 
-        if lossy_action == "copy" or _is_lossless(codec, profile):
+        copying = lossy_action == "copy" or _is_lossless(codec, profile)
+
+        if copying:
             args += [f"-c:a:{idx}", "copy"]
         elif lossy_action == "aac":
-            br = _aac_bitrate(channels)
-            args += [f"-c:a:{idx}", "aac", f"-b:a:{idx}", br]
+            out_channels = 2 if (force_stereo and channels > 2) else channels
+            br = _aac_bitrate(out_channels)
+            args += [f"-c:a:{idx}", "aac", f"-b:a:{idx}", br, f"-ac:a:{idx}", str(out_channels)]
             if sample_rate:
                 args += [f"-ar:{idx}", str(sample_rate)]
         else:  # opus (default)
-            br = _opus_bitrate(channels)
-            args += [f"-c:a:{idx}", "libopus", f"-b:a:{idx}", br]
+            out_channels = 2 if (force_stereo and channels > 2) else channels
+            br = _opus_bitrate(out_channels)
+            args += [f"-c:a:{idx}", "libopus", f"-b:a:{idx}", br, f"-ac:a:{idx}", str(out_channels)]
             if sample_rate:
                 args += [f"-ar:{idx}", str(sample_rate)]
+
+        # Audio normalization only for re-encoded tracks (can't filter stream-copy)
+        if normalize and not copying:
+            args += [f"-filter:a:{idx}", "loudnorm"]
 
     return args, has_jpn
 
@@ -212,72 +260,146 @@ def _build_audio_args(audio_tracks: list, languages: list = None, lossy_action: 
 # ffmpeg command builder
 # ---------------------------------------------------------------------------
 
-def _build_video_encode_args(hw: str, codec: str, cq: int) -> list:
-    """Build ffmpeg video encoding arguments for the given hardware/codec/quality."""
+def _build_vf_args(hw: str, scale_height: int = None, pix_fmt: str = None) -> list:
+    """Build -vf filter chain and -pix_fmt args for the video stream."""
+    filters = []
+    if scale_height:
+        filters.append(f"scale=-2:{scale_height}:flags=lanczos")
+    if hw == "vaapi":
+        if filters:
+            filters += ["format=nv12", "hwupload"]
+        else:
+            filters += ["format=nv12|vaapi", "hwupload"]
+    result = (["-vf", ",".join(filters)] if filters else [])
+    # Pixel format only meaningful for non-VAAPI software-side encoders
+    if pix_fmt and pix_fmt != "auto" and hw != "vaapi":
+        result += ["-pix_fmt", pix_fmt]
+    return result
+
+
+def _build_video_encode_args(hw: str, codec: str, cq: int, speed: str = "medium") -> list:
+    """Build ffmpeg video codec arguments (no -vf; call _build_vf_args separately)."""
     cq_s = str(cq)
+    # VP9 is always software-encoded regardless of hw setting
+    if codec == "vp9":
+        cpu  = _SPEED_VP9_CPU.get(speed, "2")
+        dl   = _SPEED_VP9_DL.get(speed, "good")
+        return ["-c:v", "libvpx-vp9", "-crf", cq_s, "-b:v", "0", "-deadline", dl, "-cpu-used", cpu]
     if hw == "nvenc":
-        enc = {"hevc": "hevc_nvenc", "av1": "av1_nvenc", "h264": "h264_nvenc"}.get(codec, "hevc_nvenc")
+        enc     = {"hevc": "hevc_nvenc", "av1": "av1_nvenc", "h264": "h264_nvenc"}.get(codec, "hevc_nvenc")
         profile = (["-profile:v", "main10"] if codec == "hevc"
                    else ["-profile:v", "high"] if codec == "h264" else [])
-        return ["-c:v", enc] + profile + ["-preset", "p4", "-rc", "vbr", "-cq", cq_s, "-b:v", "0"]
+        preset  = _SPEED_NVENC.get(speed, "p4")
+        return ["-c:v", enc] + profile + ["-preset", preset, "-rc", "vbr", "-cq", cq_s, "-b:v", "0"]
     if hw == "qsv":
-        enc = {"hevc": "hevc_qsv", "av1": "av1_qsv", "h264": "h264_qsv"}.get(codec, "hevc_qsv")
+        enc     = {"hevc": "hevc_qsv", "av1": "av1_qsv", "h264": "h264_qsv"}.get(codec, "hevc_qsv")
         profile = (["-profile:v", "main10"] if codec == "hevc"
                    else ["-profile:v", "high"] if codec == "h264" else [])
-        look = ["-look_ahead", "1"] if codec != "av1" else []
-        return ["-c:v", enc] + profile + ["-preset", "medium", "-global_quality", cq_s] + look
+        look    = ["-look_ahead", "1"] if codec != "av1" else []
+        preset  = _SPEED_QSV.get(speed, "medium")
+        return ["-c:v", enc] + profile + ["-preset", preset, "-global_quality", cq_s] + look
     if hw == "amf":
-        enc = {"hevc": "hevc_amf", "av1": "av1_amf", "h264": "h264_amf"}.get(codec, "hevc_amf")
+        enc     = {"hevc": "hevc_amf", "av1": "av1_amf", "h264": "h264_amf"}.get(codec, "hevc_amf")
         profile = (["-profile:v", "main"] if codec == "hevc"
                    else ["-profile:v", "high"] if codec == "h264" else [])
-        return ["-c:v", enc] + profile + ["-quality", "balanced", "-rc", "cqp", "-qp_i", cq_s, "-qp_p", cq_s]
+        quality = _SPEED_AMF.get(speed, "balanced")
+        return ["-c:v", enc] + profile + ["-quality", quality, "-rc", "cqp", "-qp_i", cq_s, "-qp_p", cq_s]
+    if hw == "vaapi":
+        enc = {"hevc": "hevc_vaapi", "av1": "av1_vaapi", "h264": "h264_vaapi"}.get(codec, "hevc_vaapi")
+        return ["-c:v", enc, "-rc_mode", "CQP", "-qp", cq_s]  # vf handled by _build_vf_args
+    if hw == "software":
+        sw = _SPEED_SW.get(speed, "medium")
+        if codec == "av1":
+            return ["-c:v", "libsvtav1", "-crf", cq_s, "-preset", _SPEED_SVT.get(speed, "6")]
+        elif codec == "h264":
+            return ["-c:v", "libx264", "-crf", cq_s, "-preset", sw]
+        else:
+            return ["-c:v", "libx265", "-crf", cq_s, "-preset", sw]
     # fallback: nvenc hevc
     return ["-c:v", "hevc_nvenc", "-profile:v", "main10", "-preset", "p4", "-rc", "vbr", "-cq", cq_s, "-b:v", "0"]
 
 
 def build_ffmpeg_cmd(file_row, job_type: str, input_path: str, output_path: str,
-                     ffmpeg_path: str = "ffmpeg") -> list:
-    cmd = [ffmpeg_path, "-y", "-progress", "pipe:1", "-nostats", "-i", input_path]
+                     ffmpeg_path: str = "ffmpeg",
+                     hw_encoder_override: str = None,
+                     output_video_codec_override: str = None,
+                     video_quality_cq_override: int = None,
+                     audio_lossy_action_override: str = None,
+                     output_container_override: str = None,
+                     scale_height_override: int = None,
+                     pix_fmt_override: str = None,
+                     encoder_speed_override: str = None,
+                     force_stereo_override=None,
+                     audio_normalize_override=None,
+                     subtitle_mode_override: str = None) -> list:
+    # Resolve effective settings: per-job override > global
+    eff_hw        = hw_encoder_override                                     or _hw_encoder
+    eff_codec     = output_video_codec_override                             or _output_video_codec
+    eff_cq        = video_quality_cq_override if video_quality_cq_override is not None else _video_quality_cq
+    eff_audio     = audio_lossy_action_override                             or _audio_lossy_action
+    eff_container = output_container_override                               or _output_container
+    eff_scale     = scale_height_override if scale_height_override is not None else _scale_height
+    eff_pix_fmt   = pix_fmt_override                                        or _pix_fmt
+    eff_speed     = encoder_speed_override                                  or _encoder_speed
+    eff_stereo    = force_stereo_override  if force_stereo_override  is not None else _force_stereo
+    eff_normalize = audio_normalize_override if audio_normalize_override is not None else _audio_normalize
+    eff_sub_mode  = subtitle_mode_override                                  or _subtitle_mode
+
+    # Container-specific audio overrides
+    if eff_container == "webm" and eff_audio != "opus":
+        eff_audio = "opus"   # WebM requires Opus
+    if eff_container == "mp4" and eff_audio == "opus":
+        eff_audio = "aac"    # MP4 doesn't reliably support libopus
+
+    # No subtitles/attachments for WebM or MP4 (incompatible formats)
+    subs_supported = (eff_container == "mkv")
+
+    cmd = [ffmpeg_path, "-y", "-progress", "pipe:1", "-nostats"]
+    # VA-API device must be declared before -i
+    if eff_hw == "vaapi" and job_type != "remux":
+        cmd += ["-vaapi_device", "/dev/dri/renderD128"]
+    cmd += ["-i", input_path]
 
     # --- Video ---
     cmd += ["-map", "0:v:0"]
     if job_type == "remux":
         cmd += ["-c:v", "copy"]
     else:
-        cmd += _build_video_encode_args(_hw_encoder, _output_video_codec, _video_quality_cq)
+        cmd += _build_vf_args(eff_hw, eff_scale if eff_scale else None, eff_pix_fmt)
+        cmd += _build_video_encode_args(eff_hw, eff_codec, eff_cq, eff_speed)
 
     # --- Audio ---
     audio_tracks = json.loads(file_row["audio_tracks"] or "[]")
-    audio_args, has_jpn = _build_audio_args(audio_tracks, _audio_languages, _audio_lossy_action)
+    audio_args, has_jpn = _build_audio_args(
+        audio_tracks, _audio_languages, eff_audio,
+        force_stereo=eff_stereo, normalize=eff_normalize,
+    )
     cmd += audio_args
 
-    # --- Subtitles ---
-    subtitle_tracks = json.loads(file_row["subtitle_tracks"] or "[]")
-    valid_subs = [
-        s for s in subtitle_tracks
-        if s.get("codec_name", "") not in DROP_SUBTITLE_CODECS
-    ]
+    # --- Subtitles (MKV only, respecting subtitle_mode) ---
+    if subs_supported and eff_sub_mode == "copy":
+        subtitle_tracks = json.loads(file_row["subtitle_tracks"] or "[]")
+        valid_subs = [s for s in subtitle_tracks if s.get("codec_name", "") not in DROP_SUBTITLE_CODECS]
+        mapped_sub_indices = set()
+        keep_all_langs = len(_audio_languages) == 0
 
-    mapped_sub_indices = set()
-    keep_all_langs = len(_audio_languages) == 0
-
-    if keep_all_langs:
-        for s in valid_subs:
-            if s["stream_index"] not in mapped_sub_indices:
-                cmd += ["-map", f"0:{s['stream_index']}"]
-                mapped_sub_indices.add(s["stream_index"])
-    else:
-        for lang in _audio_languages:
-            for s in [x for x in valid_subs if x.get("language") == lang]:
+        if keep_all_langs:
+            for s in valid_subs:
                 if s["stream_index"] not in mapped_sub_indices:
                     cmd += ["-map", f"0:{s['stream_index']}"]
                     mapped_sub_indices.add(s["stream_index"])
+        else:
+            for lang in _audio_languages:
+                for s in [x for x in valid_subs if x.get("language") == lang]:
+                    if s["stream_index"] not in mapped_sub_indices:
+                        cmd += ["-map", f"0:{s['stream_index']}"]
+                        mapped_sub_indices.add(s["stream_index"])
 
-    if mapped_sub_indices:
-        cmd += ["-c:s", "copy"]
+        if mapped_sub_indices:
+            cmd += ["-c:s", "copy"]
 
-    # --- Attachments (fonts etc) ---
-    cmd += ["-map", "0:t?"]
+        # --- Attachments (fonts etc, MKV only) ---
+        cmd += ["-map", "0:t?"]
 
     # --- Chapters ---
     cmd += ["-map_chapters", "0"]
@@ -307,9 +429,24 @@ def _run_encode(job_id: int, file_row, ffmpeg_path: str):
 
     input_path = file_row["path"]
     base, _ = os.path.splitext(input_path)
-    output_path = base + ".new.mkv"
-    duration_s = file_row["duration_s"] or 0
+    keep_original = bool(file_row["keep_original"])
     job_type = file_row["job_type"]
+    duration_s = file_row["duration_s"] or 0
+    output_dir = file_row["output_dir"]
+
+    # Resolve effective container for output extension
+    eff_container = file_row["output_container"] or _output_container
+    ext = {"webm": ".webm", "mp4": ".mp4"}.get(eff_container, ".mkv")
+
+    if output_dir:
+        # User chose a specific output directory — write directly there, original is untouched
+        os.makedirs(output_dir, exist_ok=True)
+        stem = os.path.splitext(os.path.basename(input_path))[0]
+        output_path = os.path.join(output_dir, stem + ext)
+    elif keep_original:
+        output_path = base + ".optimized" + ext
+    else:
+        output_path = base + ".new" + ext
 
     with _progress_lock:
         _progress = EncodeProgress(
@@ -329,7 +466,20 @@ def _run_encode(job_id: int, file_row, ffmpeg_path: str):
     )
     conn.commit()
 
-    cmd = build_ffmpeg_cmd(file_row, job_type, input_path, output_path, ffmpeg_path)
+    cmd = build_ffmpeg_cmd(
+        file_row, job_type, input_path, output_path, ffmpeg_path,
+        hw_encoder_override=file_row["hw_encoder"],
+        output_video_codec_override=file_row["output_video_codec"],
+        video_quality_cq_override=file_row["video_quality_cq"],
+        audio_lossy_action_override=file_row["audio_lossy_action"],
+        output_container_override=file_row["output_container"],
+        scale_height_override=file_row["scale_height"],
+        pix_fmt_override=file_row["pix_fmt"],
+        encoder_speed_override=file_row["encoder_speed"],
+        force_stereo_override=bool(file_row["force_stereo"]) if file_row["force_stereo"] is not None else None,
+        audio_normalize_override=bool(file_row["audio_normalize"]) if file_row["audio_normalize"] is not None else None,
+        subtitle_mode_override=file_row["subtitle_mode"],
+    )
 
     _clear_log()
 
@@ -420,18 +570,35 @@ def _run_encode(job_id: int, file_row, ffmpeg_path: str):
     now = datetime.utcnow().isoformat()
 
     if success:
-        # In-place replacement: delete original, rename .new.mkv
         try:
-            os.remove(input_path)
-            os.rename(output_path, input_path)
-            # Update file record mtime
-            new_mtime = os.path.getmtime(input_path)
-            conn.execute(
-                "UPDATE files SET mtime=?, needs_optimize=0 WHERE id=?",
-                (new_mtime, file_row["file_id"]),
-            )
+            if output_dir:
+                # Output was written to a separate directory — original is untouched
+                new_mtime = os.path.getmtime(input_path)
+                conn.execute(
+                    "UPDATE files SET mtime=?, needs_optimize=0 WHERE id=?",
+                    (new_mtime, file_row["file_id"]),
+                )
+            elif keep_original:
+                # Leave the original untouched; mark it optimized so it leaves the flagged list
+                new_mtime = os.path.getmtime(input_path)
+                conn.execute(
+                    "UPDATE files SET mtime=?, needs_optimize=0 WHERE id=?",
+                    (new_mtime, file_row["file_id"]),
+                )
+            else:
+                # Replace original: delete it, rename temp to final path
+                # If container changed extension (e.g. mkv→webm), use new extension
+                final_path = base + ext
+                os.remove(input_path)
+                os.rename(output_path, final_path)
+                new_mtime = os.path.getmtime(final_path)
+                new_filename = os.path.basename(final_path)
+                conn.execute(
+                    "UPDATE files SET path=?, filename=?, mtime=?, needs_optimize=0 WHERE id=?",
+                    (final_path, new_filename, new_mtime, file_row["file_id"]),
+                )
         except Exception as e:
-            error_msg = f"Post-encode rename failed: {e}"
+            error_msg = f"Post-encode file handling failed: {e}"
             success = False
 
     if success:
@@ -467,7 +634,12 @@ def _encoder_worker(ffmpeg_path: str):
     while True:
         conn = get_db()
         row = conn.execute("""
-            SELECT j.id as job_id, j.file_id, j.job_type,
+            SELECT j.id as job_id, j.file_id, j.job_type, j.keep_original,
+                   j.hw_encoder, j.output_video_codec, j.video_quality_cq,
+                   j.audio_lossy_action, j.output_container,
+                   j.scale_height, j.pix_fmt, j.encoder_speed,
+                   j.force_stereo, j.audio_normalize, j.subtitle_mode,
+                   j.output_dir,
                    f.path, f.filename, f.duration_s,
                    f.audio_tracks, f.subtitle_tracks
             FROM jobs j
@@ -503,16 +675,17 @@ def startup_cleanup():
     )
     conn.commit()
 
-    # Find all file paths, look for orphaned .new.mkv
+    # Find all file paths, look for orphaned temp encode files
     rows = conn.execute("SELECT path FROM files").fetchall()
     for row in rows:
         base, _ = os.path.splitext(row["path"])
-        orphan = base + ".new.mkv"
-        if os.path.exists(orphan):
-            try:
-                os.remove(orphan)
-            except Exception:
-                pass
+        for suffix in (".new.mkv", ".optimized.mkv", ".new.webm", ".optimized.webm", ".new.mp4", ".optimized.mp4"):
+            orphan = base + suffix
+            if os.path.exists(orphan):
+                try:
+                    os.remove(orphan)
+                except Exception:
+                    pass
 
     conn.close()
 

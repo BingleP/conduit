@@ -166,6 +166,11 @@ def main():
         sys.exit(1)
 
     try:
+        class _Api:
+            def pick_folder(self):
+                result = webview.windows[0].create_file_dialog(webview.FOLDER_DIALOG)
+                return result[0] if result else None
+
         window = webview.create_window(
             "Conduit",
             local_url,
@@ -173,6 +178,7 @@ def main():
             height=900,
             resizable=True,
             min_size=(900, 600),
+            js_api=_Api(),
         )
         log.info("Window created")
 

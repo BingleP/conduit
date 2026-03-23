@@ -117,10 +117,16 @@
             <span id="page-label" class="page-label">1 – 0 of 0</span>
             <button id="next-page-btn" class="btn-page" disabled>&#8250;</button>
           </div>
-          <button id="optimize-btn" class="btn-optimize" disabled>
-            <svg viewBox="0 0 24 24" fill="none"><path d="M13 10V3L4 14h7v7l9-11h-7z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
-            Optimize Selected
-          </button>
+          <div class="action-btn-group">
+            <button id="optimize-btn" class="btn-optimize" disabled>
+              <svg viewBox="0 0 24 24" fill="none"><path d="M13 10V3L4 14h7v7l9-11h-7z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+              Optimize Selected
+            </button>
+            <button id="encode-btn" class="btn-encode" disabled>
+              <svg viewBox="0 0 24 24" fill="none"><path d="M12 6V3m0 18v-3M6 12H3m18 0h-3m-2.121-6.364-2.122 2.122M8.243 15.757l-2.122 2.122M17.657 17.657l-2.122-2.122M8.243 8.243 6.121 6.121" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+              Encode
+            </button>
+          </div>
         </div>
       </div>
 
@@ -273,6 +279,239 @@
     </div>
   </div>
 
+  <!-- Optimize Confirmation Modal -->
+  <div id="optimize-confirm-modal" class="modal-overlay hidden">
+    <div class="modal modal-confirm">
+      <div class="modal-header">
+        <span class="modal-title">Optimize <span id="optimize-confirm-count"></span></span>
+        <button class="modal-close" data-modal="optimize-confirm-modal">&#x2715;</button>
+      </div>
+      <div class="modal-body">
+        <p class="optimize-confirm-desc">What should happen to the original files after encoding?</p>
+        <div class="optimize-choice-group">
+          <button id="optimize-replace-btn" class="optimize-choice-btn optimize-choice-replace">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="optimize-choice-label">Replace Originals</span>
+            <span class="optimize-choice-sub">Original files are deleted after a successful encode. The optimized file takes their place.</span>
+          </button>
+          <button id="optimize-keep-btn" class="optimize-choice-btn optimize-choice-keep">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M8 7H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3m-1-4H9l-1 4h8l-1-4z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="optimize-choice-label">Keep Originals</span>
+            <span class="optimize-choice-sub">Original files are kept. The optimized file is saved alongside as <code>filename.optimized.mkv</code>.</span>
+          </button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-cancel" data-modal="optimize-confirm-modal">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom Encode Modal -->
+  <div id="custom-encode-modal" class="modal-overlay hidden">
+    <div class="modal modal-custom-encode">
+      <div class="modal-header">
+        <span class="modal-title">Encode <span id="custom-encode-count"></span></span>
+        <button class="modal-close" data-modal="custom-encode-modal">&#x2715;</button>
+      </div>
+      <div class="modal-body custom-encode-body">
+
+        <div class="custom-encode-row" id="ce-preset-row">
+          <label class="modal-label">Preset</label>
+          <select id="ce-preset" class="modal-input modal-input-sm">
+            <option value="">— Custom —</option>
+          </select>
+        </div>
+
+        <div class="custom-encode-divider" id="ce-preset-divider"></div>
+
+        <div class="custom-encode-section">
+          <div class="custom-encode-row">
+            <label class="modal-label">Hardware Accelerator</label>
+            <select id="ce-hw-encoder" class="modal-input modal-input-sm">
+              <option value="nvenc">NVIDIA NVENC</option>
+              <option value="qsv">Intel Quick Sync (QSV)</option>
+              <option value="amf">AMD AMF</option>
+              <option value="vaapi">VA-API</option>
+              <option value="software">Software (CPU)</option>
+            </select>
+          </div>
+          <div class="custom-encode-row">
+            <label class="modal-label">Output Codec</label>
+            <select id="ce-output-codec" class="modal-input modal-input-sm">
+              <option value="hevc">HEVC / H.265</option>
+              <option value="av1">AV1</option>
+              <option value="h264">H.264 / AVC</option>
+              <option value="vp9">VP9</option>
+            </select>
+          </div>
+          <div class="custom-encode-row">
+            <label class="modal-label">Quality (CQ) <span id="ce-cq-display" class="settings-cq-display">24</span></label>
+            <input id="ce-cq" type="range" class="settings-range" min="0" max="51" step="1" value="24" />
+            <div class="settings-range-labels"><span>0 — Best quality</span><span>51 — Smallest file</span></div>
+          </div>
+          <div class="custom-encode-row">
+            <label class="modal-label">Audio</label>
+            <select id="ce-audio-action" class="modal-input modal-input-sm">
+              <option value="opus">Opus (recommended)</option>
+              <option value="aac">AAC</option>
+              <option value="copy">Copy (no re-encode)</option>
+            </select>
+          </div>
+          <div class="custom-encode-row">
+            <label class="modal-label">Container</label>
+            <select id="ce-container" class="modal-input modal-input-sm">
+              <option value="mkv">MKV (Matroska) — full features, subtitles, attachments</option>
+              <option value="mp4">MP4 — broad device compatibility, AAC audio only</option>
+              <option value="webm">WebM — VP9 + Opus only, no subtitles</option>
+            </select>
+          </div>
+          <div class="custom-encode-row">
+            <label class="modal-label">Scale / Resolution</label>
+            <select id="ce-scale-height" class="modal-input modal-input-sm">
+              <option value="0">Original (no scaling)</option>
+              <option value="2160">4K (2160p)</option>
+              <option value="1080">1080p</option>
+              <option value="720">720p</option>
+              <option value="480">480p</option>
+            </select>
+          </div>
+          <div class="custom-encode-row">
+            <label class="modal-label">Pixel Format</label>
+            <select id="ce-pix-fmt" class="modal-input modal-input-sm">
+              <option value="auto">Auto (match source)</option>
+              <option value="yuv420p">yuv420p — 8-bit</option>
+              <option value="yuv420p10le">yuv420p10le — 10-bit</option>
+            </select>
+          </div>
+          <div class="custom-encode-row">
+            <label class="modal-label">Encoder Speed</label>
+            <select id="ce-encoder-speed" class="modal-input modal-input-sm">
+              <option value="fast">Fast</option>
+              <option value="medium">Medium</option>
+              <option value="slow">Slow</option>
+              <option value="veryslow">Very Slow</option>
+            </select>
+          </div>
+          <div class="custom-encode-row">
+            <label class="modal-label">Subtitle Mode</label>
+            <select id="ce-subtitle-mode" class="modal-input modal-input-sm">
+              <option value="copy">Copy subtitles (MKV only)</option>
+              <option value="strip">Strip all subtitles</option>
+            </select>
+          </div>
+          <div class="custom-encode-row">
+            <div class="settings-toggle-row" style="padding:0">
+              <span class="modal-label" style="margin:0">Force Stereo Downmix</span>
+              <label class="toggle-switch">
+                <input type="checkbox" id="ce-force-stereo" />
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              </label>
+            </div>
+          </div>
+          <div class="custom-encode-row">
+            <div class="settings-toggle-row" style="padding:0">
+              <span class="modal-label" style="margin:0">Loudness Normalization</span>
+              <label class="toggle-switch">
+                <input type="checkbox" id="ce-audio-normalize" />
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="custom-encode-divider"></div>
+
+        <div class="custom-encode-section">
+          <label class="modal-label" style="margin-bottom:10px;display:block">Output Location</label>
+          <div class="ce-output-dir-row">
+            <input id="ce-output-dir" type="text" class="modal-input" placeholder="Same folder as source (default)" readonly />
+            <button id="ce-browse-btn" class="btn-browse">Browse…</button>
+            <button id="ce-clear-dir-btn" class="btn-clear-dir hidden" title="Clear — save next to source">&#x2715;</button>
+          </div>
+          <p class="modal-hint" style="margin-top:6px">All encoded files will be written to this folder. When set, originals are always kept.</p>
+        </div>
+
+        <div id="ce-hdr-section" class="custom-encode-divider-section hidden">
+          <div class="custom-encode-divider"></div>
+          <div class="custom-encode-section">
+            <div class="ce-hdr-header">
+              <label class="modal-label">HDR Files <span id="ce-hdr-count" class="ce-hdr-count"></span></label>
+              <span class="ce-hdr-warning">HDR10+ / Dolby Vision — dynamic metadata cannot survive re-encoding</span>
+            </div>
+            <div id="ce-hdr-files" class="ce-hdr-files"></div>
+            <div class="ce-hdr-choice-group">
+              <button id="ce-hdr-remux-btn" class="ce-hdr-choice-btn ce-hdr-choice-active">
+                <svg viewBox="0 0 24 24" fill="none"><path d="M8 7v10M16 7v10M3 8l5-1M3 16l5 1M21 8l-5-1M21 16l-5 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                <div>
+                  <span class="ce-hdr-choice-label">Remux</span>
+                  <span class="ce-hdr-choice-sub">Copy video stream, preserve all HDR metadata. Re-encode audio only.</span>
+                </div>
+              </button>
+              <button id="ce-hdr-reencode-btn" class="ce-hdr-choice-btn">
+                <svg viewBox="0 0 24 24" fill="none"><path d="M13 10V3L4 14h7v7l9-11h-7z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+                <div>
+                  <span class="ce-hdr-choice-label">Re-encode</span>
+                  <span class="ce-hdr-choice-sub">Full encode with selected settings. Dynamic HDR is lost, falls back to HDR10 or SDR.</span>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div id="ce-after-section">
+        <div class="custom-encode-divider"></div>
+
+        <div class="custom-encode-section">
+          <label class="modal-label" style="margin-bottom:10px;display:block">After Encoding</label>
+          <div class="optimize-choice-group">
+            <button id="ce-replace-btn" class="optimize-choice-btn optimize-choice-replace ce-choice-active">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span class="optimize-choice-label">Replace Originals</span>
+              <span class="optimize-choice-sub">Original deleted after encode.</span>
+            </button>
+            <button id="ce-keep-btn" class="optimize-choice-btn optimize-choice-keep">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M8 7H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3m-1-4H9l-1 4h8l-1-4z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span class="optimize-choice-label">Keep Originals</span>
+              <span class="optimize-choice-sub">Saved as <code>filename.optimized.mkv</code>.</span>
+            </button>
+          </div>
+        </div>
+        </div><!-- /ce-after-section -->
+
+      </div>
+      <div class="modal-footer">
+        <button class="btn-cancel" data-modal="custom-encode-modal">Cancel</button>
+        <button id="ce-submit-btn" class="btn-confirm">
+          <svg viewBox="0 0 24 24" fill="none" style="width:13px;height:13px;margin-right:5px"><path d="M13 10V3L4 14h7v7l9-11h-7z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+          Encode
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Output Directory Collision Warning Modal -->
+  <div id="collision-modal" class="modal-overlay hidden">
+    <div class="modal modal-collision">
+      <div class="modal-header">
+        <span class="modal-title">Filename Collision Detected</span>
+        <button class="modal-close" data-modal="collision-modal">&#x2715;</button>
+      </div>
+      <div class="modal-body">
+        <div class="collision-warning-row">
+          <svg viewBox="0 0 24 24" fill="none" style="flex-shrink:0;width:20px;height:20px"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="var(--accent-red)" stroke-width="1.5" stroke-linejoin="round"/><line x1="12" y1="9" x2="12" y2="13" stroke="var(--accent-red)" stroke-width="1.5" stroke-linecap="round"/><line x1="12" y1="17" x2="12.01" y2="17" stroke="var(--accent-red)" stroke-width="2" stroke-linecap="round"/></svg>
+          <p>Multiple selected files share the same output filename. Later encodes will silently overwrite earlier ones in <strong id="collision-dir-label"></strong>.</p>
+        </div>
+        <div id="collision-list" class="collision-list"></div>
+        <p class="modal-hint" style="margin-top:12px">To fix this, deselect the conflicting files or choose a different output location.</p>
+      </div>
+      <div class="modal-footer">
+        <button id="collision-cancel-btn" class="btn-cancel" data-modal="collision-modal">Go Back</button>
+        <button id="collision-confirm-btn" class="btn-reencode">Encode Anyway</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Settings Modal -->
   <div id="settings-modal" class="modal-overlay hidden">
     <div class="modal modal-wide modal-settings">
@@ -288,6 +527,8 @@
           <button class="settings-tab" data-stab="audio">Audio</button>
           <button class="settings-tab" data-stab="flagging">Flagging</button>
           <button class="settings-tab" data-stab="network">Network</button>
+          <button class="settings-tab" data-stab="presets">Presets</button>
+          <button class="settings-tab" data-stab="database" id="settings-tab-database">Database</button>
         </div>
 
         <!-- Encoder tab -->
@@ -298,8 +539,10 @@
               <option value="nvenc">NVIDIA NVENC — RTX / GTX 9xx+</option>
               <option value="qsv">Intel Quick Sync (QSV) — 6th gen Core+</option>
               <option value="amf">AMD AMF — RX 400 series+</option>
+              <option value="vaapi">VA-API — Intel / AMD / older GPUs via /dev/dri</option>
+              <option value="software">Software (CPU) — libx265 / libsvtav1 / libx264</option>
             </select>
-            <p class="modal-hint">GPU used for hardware encoding. Takes effect on the next queued job. Remux jobs are always CPU-only.</p>
+            <p class="modal-hint">Encoder backend. VA-API works on most Intel and AMD GPUs without vendor drivers. Software encoding is universal but slow. Remux jobs are always CPU-only.</p>
           </div>
           <div class="settings-field">
             <label class="modal-label">ffmpeg Path</label>
@@ -310,11 +553,6 @@
             <label class="modal-label">ffprobe Path</label>
             <input id="settings-ffprobe" type="text" class="modal-input" placeholder="ffprobe" />
             <p class="modal-hint">Full path to ffprobe, or just <code>ffprobe</code> if it's on your PATH.</p>
-          </div>
-          <div class="settings-field">
-            <label class="modal-label">Port</label>
-            <input id="settings-port" type="text" class="modal-input settings-readonly" readonly />
-            <p class="modal-hint">Set in <code>config.json</code>. Requires a server restart to change.</p>
           </div>
         </div>
 
@@ -344,6 +582,13 @@
                   <span class="codec-radio-sub">Universal compatibility. Larger files than HEVC at equal quality.</span>
                 </span>
               </label>
+              <label class="codec-radio-btn">
+                <input type="radio" name="output_codec" value="vp9" />
+                <span class="codec-radio-label">
+                  <strong>VP9</strong>
+                  <span class="codec-radio-sub">Open codec. Required for Tower Unite. Always software-encoded (libvpx-vp9).</span>
+                </span>
+              </label>
             </div>
           </div>
           <div class="settings-field">
@@ -351,6 +596,52 @@
             <input id="settings-cq" type="range" class="settings-range" min="0" max="51" step="1" value="24" />
             <div class="settings-range-labels"><span>0 — Best quality</span><span>51 — Smallest file</span></div>
             <p class="modal-hint">18–28 is the typical range. Lower = better quality, larger file. Default: 24.</p>
+          </div>
+          <div class="settings-field">
+            <label class="modal-label">Output Container</label>
+            <select id="settings-output-container" class="modal-input">
+              <option value="mkv">MKV (Matroska) — full features, subtitles, attachments</option>
+              <option value="mp4">MP4 — broad device compatibility, AAC audio only</option>
+              <option value="webm">WebM — VP9 + Opus only, no subtitles</option>
+            </select>
+            <p class="modal-hint">MKV supports all codecs, subtitles, and attachments. MP4 forces AAC audio and strips subtitles. WebM requires VP9 + Opus.</p>
+          </div>
+          <div class="settings-field">
+            <label class="modal-label">Scale / Resolution</label>
+            <select id="settings-scale-height" class="modal-input">
+              <option value="0">Original (no scaling)</option>
+              <option value="2160">4K (2160p)</option>
+              <option value="1080">1080p</option>
+              <option value="720">720p</option>
+              <option value="480">480p</option>
+            </select>
+            <p class="modal-hint">Downscale video to this height while preserving aspect ratio. Uses Lanczos filter.</p>
+          </div>
+          <div class="settings-field">
+            <label class="modal-label">Pixel Format</label>
+            <select id="settings-pix-fmt" class="modal-input">
+              <option value="auto">Auto (match source)</option>
+              <option value="yuv420p">yuv420p — 8-bit, maximum compatibility</option>
+              <option value="yuv420p10le">yuv420p10le — 10-bit HDR</option>
+            </select>
+            <p class="modal-hint">Force a specific pixel format. Auto lets the encoder decide. Not applied to VA-API encodes.</p>
+          </div>
+          <div class="settings-field">
+            <label class="modal-label">Encoder Speed</label>
+            <select id="settings-encoder-speed" class="modal-input">
+              <option value="fast">Fast — quick encode, larger file</option>
+              <option value="medium">Medium (default)</option>
+              <option value="slow">Slow — better compression</option>
+              <option value="veryslow">Very Slow — best compression</option>
+            </select>
+            <p class="modal-hint">Maps to NVENC presets (p2–p7), QSV fast/slow, AMF speed/quality, libx265/libx264 preset, or VP9 cpu-used.</p>
+          </div>
+          <div class="settings-field">
+            <label class="modal-label">Subtitle Mode</label>
+            <select id="settings-subtitle-mode" class="modal-input">
+              <option value="copy">Copy — include subtitle tracks (MKV only)</option>
+              <option value="strip">Strip — remove all subtitles</option>
+            </select>
           </div>
         </div>
 
@@ -388,6 +679,30 @@
               </div>
             </div>
             <p class="modal-hint">Audio and subtitle tracks for these languages are included in the output. If no match is found, the first audio track is kept as a fallback.</p>
+          </div>
+          <div class="settings-field">
+            <div class="settings-toggle-row">
+              <span>
+                <span class="modal-label" style="display:inline">Force Stereo Downmix</span>
+                <p class="modal-hint" style="margin-top:4px">Re-encode all surround tracks (5.1, 7.1) to stereo (2.0). Only applies to re-encoded tracks — lossless and copied tracks are unaffected.</p>
+              </span>
+              <label class="toggle-switch">
+                <input type="checkbox" id="settings-force-stereo" />
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              </label>
+            </div>
+          </div>
+          <div class="settings-field">
+            <div class="settings-toggle-row">
+              <span>
+                <span class="modal-label" style="display:inline">Loudness Normalization (loudnorm)</span>
+                <p class="modal-hint" style="margin-top:4px">Apply EBU R128 loudness normalization to re-encoded audio tracks. Only applies to re-encoded tracks.</p>
+              </span>
+              <label class="toggle-switch">
+                <input type="checkbox" id="settings-audio-normalize" />
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              </label>
+            </div>
           </div>
         </div>
 
@@ -437,6 +752,83 @@
               <input id="settings-web-ui-port" type="number" class="modal-input" min="1" max="65535" placeholder="8000" />
               <p class="modal-hint">Port that network clients will connect to. Default: 8000. Requires a restart to apply.</p>
             </div>
+          </div>
+        </div>
+
+        <!-- Presets tab -->
+        <div id="stab-presets" class="settings-tab-content">
+          <div class="settings-field presets-tab-header">
+            <span class="modal-label">Encode Presets</span>
+            <button id="preset-new-btn" class="btn-preset-new">+ New Preset</button>
+          </div>
+          <p class="modal-hint" style="margin-bottom:12px">Presets appear in the Encode modal for quick one-click configuration. Built-in presets cannot be edited.</p>
+          <div id="presets-list" class="presets-list"></div>
+
+          <!-- Inline preset editor (hidden by default) -->
+          <div id="preset-editor" class="preset-editor hidden">
+            <div class="preset-editor-title" id="preset-editor-title">New Preset</div>
+            <div class="preset-editor-fields">
+              <div class="custom-encode-row">
+                <label class="modal-label">Name</label>
+                <input id="pe-name" type="text" class="modal-input modal-input-sm" placeholder="My Preset" />
+              </div>
+              <div class="custom-encode-row">
+                <label class="modal-label">Hardware Accelerator</label>
+                <select id="pe-hw-encoder" class="modal-input modal-input-sm">
+                  <option value="nvenc">NVIDIA NVENC</option>
+                  <option value="qsv">Intel Quick Sync (QSV)</option>
+                  <option value="amf">AMD AMF</option>
+                  <option value="vaapi">VA-API</option>
+                  <option value="software">Software (CPU)</option>
+                </select>
+              </div>
+              <div class="custom-encode-row">
+                <label class="modal-label">Output Codec</label>
+                <select id="pe-output-codec" class="modal-input modal-input-sm">
+                  <option value="hevc">HEVC / H.265</option>
+                  <option value="av1">AV1</option>
+                  <option value="h264">H.264 / AVC</option>
+                  <option value="vp9">VP9</option>
+                </select>
+              </div>
+              <div class="custom-encode-row">
+                <label class="modal-label">Container</label>
+                <select id="pe-container" class="modal-input modal-input-sm">
+                  <option value="mkv">MKV (Matroska)</option>
+                  <option value="mp4">MP4</option>
+                  <option value="webm">WebM</option>
+                </select>
+              </div>
+              <div class="custom-encode-row">
+                <label class="modal-label">Quality (CQ) <span id="pe-cq-display" class="settings-cq-display">24</span></label>
+                <input id="pe-cq" type="range" class="settings-range" min="0" max="51" step="1" value="24" />
+                <div class="settings-range-labels"><span>0 — Best quality</span><span>51 — Smallest file</span></div>
+              </div>
+              <div class="custom-encode-row">
+                <label class="modal-label">Audio</label>
+                <select id="pe-audio-action" class="modal-input modal-input-sm">
+                  <option value="opus">Opus</option>
+                  <option value="aac">AAC</option>
+                  <option value="copy">Copy</option>
+                </select>
+              </div>
+            </div>
+            <div class="preset-editor-actions">
+              <button id="pe-cancel-btn" class="btn-cancel">Cancel</button>
+              <button id="pe-save-btn" class="btn-confirm">Save Preset</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Database tab -->
+        <div id="stab-database" class="settings-tab-content">
+          <div class="settings-field db-tab-header">
+            <span class="modal-label">Optimized Files</span>
+            <button id="db-reflag-all-btn" class="btn-db-reflag-all" style="display:none">Re-flag All</button>
+          </div>
+          <p class="modal-hint" style="margin-bottom:12px">Files that have had a completed encode or remux job. Re-flag a file to put it back in the optimization queue.</p>
+          <div id="db-optimized-list" class="db-optimized-list">
+            <div class="db-empty">No optimized files yet.</div>
           </div>
         </div>
 
