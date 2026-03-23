@@ -638,19 +638,19 @@
           </div>
           <div class="settings-field">
             <div class="settings-toggle-row">
-              <span>
-                <span class="modal-label" style="display:inline">Force Stereo Downmix</span>
-                <p class="modal-hint" style="margin-top:4px">Downmix all audio tracks to stereo (2.0) during re-encoding. Useful for devices that don't support surround sound, or for Tower Unite which only uses stereo. Only affects tracks that are being re-encoded — lossless and copied tracks are unaffected.</p>
-              </span>
+              <div class="settings-toggle-label">
+                <span class="modal-label">Force Stereo Downmix</span>
+                <p class="modal-hint">Downmix all audio tracks to stereo (2.0) during re-encoding. Useful for devices that don't support surround sound, or for Tower Unite which only uses stereo. Only affects tracks that are being re-encoded — lossless and copied tracks are unaffected.</p>
+              </div>
               <label class="toggle-switch"><input type="checkbox" id="settings-force-stereo"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
             </div>
           </div>
           <div class="settings-field">
             <div class="settings-toggle-row">
-              <span>
-                <span class="modal-label" style="display:inline">Loudness Normalization</span>
-                <p class="modal-hint" style="margin-top:4px">Apply EBU R128 loudness normalization to re-encoded audio tracks. Targets −23 LUFS with a true peak of −2 dBTP. Useful for libraries with inconsistent volume levels across different sources. Only affects tracks that are being re-encoded.</p>
-              </span>
+              <div class="settings-toggle-label">
+                <span class="modal-label">Loudness Normalization</span>
+                <p class="modal-hint">Apply EBU R128 loudness normalization to re-encoded audio tracks. Targets −23 LUFS with a true peak of −2 dBTP. Useful for libraries with inconsistent volume levels across different sources. Only affects tracks that are being re-encoded.</p>
+              </div>
               <label class="toggle-switch"><input type="checkbox" id="settings-audio-normalize"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
             </div>
           </div>
@@ -665,10 +665,10 @@
           </div>
           <div class="settings-field">
             <div class="settings-toggle-row">
-              <span>
-                <span class="modal-label" style="display:inline">Flag AV1 files for optimization</span>
-                <p class="modal-hint" style="margin-top:4px">Flag AV1 files so they appear in the optimization queue. Disable this if AV1 is your preferred output codec or your devices support AV1 natively. Takes effect immediately — no rescan needed.</p>
-              </span>
+              <div class="settings-toggle-label">
+                <span class="modal-label">Flag AV1 files for optimization</span>
+                <p class="modal-hint">Flag AV1 files so they appear in the optimization queue. Disable this if AV1 is your preferred output codec or your devices support AV1 natively. Takes effect immediately — no rescan needed.</p>
+              </div>
               <label class="toggle-switch"><input type="checkbox" id="settings-flag-av1"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
             </div>
           </div>
@@ -678,10 +678,10 @@
         <div id="stab-network" class="settings-tab-content">
           <div class="settings-field">
             <div class="settings-toggle-row">
-              <span>
-                <span class="modal-label" style="display:inline">Enable Web UI</span>
-                <p class="modal-hint" style="margin-top:4px">Allow other devices on your network to access the Conduit interface via a web browser. When disabled, Conduit only listens on localhost and is not accessible from other devices. Requires a restart to take effect.</p>
-              </span>
+              <div class="settings-toggle-label">
+                <span class="modal-label">Enable Web UI</span>
+                <p class="modal-hint">Allow other devices on your network to access the Conduit interface via a web browser. When disabled, Conduit only listens on localhost. <strong>Requires a full app restart to take effect.</strong></p>
+              </div>
               <label class="toggle-switch"><input type="checkbox" id="settings-web-ui-enabled"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
             </div>
           </div>
@@ -749,7 +749,7 @@
       <div class="settings-feedback">
         <div id="settings-error" class="modal-error hidden"></div>
         <div id="settings-success" class="settings-success hidden">Settings saved successfully.</div>
-        <div id="settings-restart-note" class="settings-restart-note hidden">Network changes require a server restart to take effect.</div>
+        <div id="settings-restart-note" class="settings-restart-note hidden">⚠ Network settings changed — close and relaunch Conduit for the Web UI to take effect.</div>
       </div>
       <div class="modal-footer">
         <button class="btn-cancel" data-modal="settings-modal">Close</button>

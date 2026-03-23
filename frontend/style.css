@@ -2533,6 +2533,10 @@ button.opt-flag.opt-flag-yes:hover {
   justify-content: space-between;
   gap: 16px;
 }
+.settings-toggle-label {
+  flex: 1;
+  min-width: 0;
+}
 
 /* Toggle switch */
 .toggle-switch {

@@ -38,6 +38,7 @@ const state = {
   _ceKeepOriginal: false,
   _ceHdrAction: 'remux',
   _ceOutputDir: null,
+  _loadedNetworkSettings: null,
   flaggedFiles: [],
   openFileId: null,
 };
@@ -1940,6 +1941,14 @@ async function openSettingsModal() {
     DOM.settingsWebUiPort.value      = s.web_ui_port || 8000;
     DOM.settingsWebUiUsername.value  = localStorage.getItem('settings-web-ui-username') || '';
     DOM.settingsWebUiPassword.value  = localStorage.getItem('settings-web-ui-password') || '';
+    // Snapshot network settings so saveSettings can detect changes
+    state._loadedNetworkSettings = {
+      enabled:  s.web_ui_enabled || false,
+      host:     s.web_ui_host || '0.0.0.0',
+      port:     s.web_ui_port || 8000,
+      username: localStorage.getItem('settings-web-ui-username') || '',
+      password: localStorage.getItem('settings-web-ui-password') || '',
+    };
     _updateNetworkFieldVisibility();
   } catch (e) {
     DOM.settingsError.textContent = 'Failed to load settings: ' + e.message;
@@ -2010,12 +2019,24 @@ async function saveSettings() {
       localStorage.setItem('settings-web-ui-password', webUiPassword);
     }
 
+    // Detect if any network settings actually changed
+    const prev = state._loadedNetworkSettings || {};
+    const networkChanged = DOM.settingsWebUiEnabled.checked !== prev.enabled
+      || DOM.settingsWebUiHost.value.trim()   !== prev.host
+      || String(isNaN(webUiPort) ? prev.port : webUiPort) !== String(prev.port)
+      || webUiUsername !== prev.username
+      || webUiPassword !== prev.password;
+
     fetchFlaggedFiles();
     fetchFiles();
     DOM.settingsSuccess.classList.remove('hidden');
     setTimeout(() => DOM.settingsSuccess.classList.add('hidden'), 3000);
-    DOM.settingsRestartNote.classList.remove('hidden');
-    setTimeout(() => DOM.settingsRestartNote.classList.add('hidden'), 6000);
+    if (networkChanged) {
+      DOM.settingsRestartNote.classList.remove('hidden');
+      // Don't auto-hide — user must see this and restart
+    } else {
+      DOM.settingsRestartNote.classList.add('hidden');
+    }
   } catch (e) {
     DOM.settingsError.textContent = 'Save failed: ' + e.message;
     DOM.settingsError.classList.remove('hidden');
