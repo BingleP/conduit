@@ -664,7 +664,7 @@ function buildFileRow(file) {
        </button>`
     : '';
 
-  const bitrateClass = file.bitrate_kbps > 25000 ? 'cell-bitrate bitrate-high' : 'cell-bitrate';
+  const bitrateClass = file.bitrate_kbps > state.bitrateThreshold ? 'cell-bitrate bitrate-high' : 'cell-bitrate';
 
   tr.innerHTML = `
     <td class="col-check"><input type="checkbox" data-id="${file.id}" ${isSelected ? 'checked' : ''} /></td>
