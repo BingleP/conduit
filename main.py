@@ -434,7 +434,7 @@ def scan_status():
 VALID_SORT_COLS = {
     "filename", "size_bytes", "duration_s", "bitrate_kbps",
     "width", "height", "video_codec", "hdr_type", "needs_optimize", "scanned_at",
-    "audio_codec",
+    "audio_codec", "folder_id",
 }
 
 
