@@ -505,25 +505,28 @@
           <div class="settings-field">
             <label class="modal-label">Hardware Accelerator</label>
             <select id="settings-hw-encoder" class="modal-input">
-              <option value="nvenc">NVIDIA NVENC</option>
-              <option value="qsv">Intel Quick Sync (QSV)</option>
-              <option value="amf">AMD AMF</option>
-              <option value="vaapi">VA-API</option>
-              <option value="software">Software (CPU)</option>
+              <option value="nvenc">NVIDIA NVENC — GTX 900 series or newer</option>
+              <option value="qsv">Intel Quick Sync (QSV) — 6th gen Core or newer</option>
+              <option value="amf">AMD AMF — RX 400 series or newer</option>
+              <option value="vaapi">VA-API — Intel / AMD / older GPUs via /dev/dri</option>
+              <option value="software">Software (CPU) — libx265 / libsvtav1 / libx264 / libvpx-vp9</option>
             </select>
+            <p class="modal-hint">GPU backend used for encoding. VA-API works on most Intel and AMD GPUs without vendor-specific drivers. Software encoding works on any machine but is significantly slower. Remux jobs are always CPU-only regardless of this setting.</p>
           </div>
           <div class="settings-field">
             <label class="modal-label">VA-API Device Path</label>
             <input id="settings-vaapi-device" type="text" class="modal-input" placeholder="/dev/dri/renderD128" />
-            <p class="modal-hint">Path to the VA-API render node. Default: <code>/dev/dri/renderD128</code>.</p>
+            <p class="modal-hint">Path to the VA-API render node. Only used when VA-API is selected above. Run <code>ls /dev/dri/</code> to list available nodes — use <code>renderD128</code> for the primary GPU, <code>renderD129</code> for a second GPU.</p>
           </div>
           <div class="settings-field">
             <label class="modal-label">ffmpeg Path</label>
             <input id="settings-ffmpeg" type="text" class="modal-input" placeholder="ffmpeg" />
+            <p class="modal-hint">Full path to the ffmpeg binary, or just <code>ffmpeg</code> if it is on your PATH. Used for all encoding and remux operations.</p>
           </div>
           <div class="settings-field">
             <label class="modal-label">ffprobe Path</label>
             <input id="settings-ffprobe" type="text" class="modal-input" placeholder="ffprobe" />
+            <p class="modal-hint">Full path to the ffprobe binary, or just <code>ffprobe</code> if it is on your PATH. Used during folder scans to extract video metadata.</p>
           </div>
         </div>
 
@@ -532,72 +535,92 @@
           <div class="settings-field">
             <label class="modal-label">Output Codec</label>
             <div class="codec-radio-group" id="settings-output-codec">
-              <label class="codec-radio-btn"><input type="radio" name="output_codec" value="hevc"><span class="codec-radio-label"><strong>HEVC</strong><span class="codec-radio-sub">Best compatibility.</span></span></label>
-              <label class="codec-radio-btn"><input type="radio" name="output_codec" value="av1"><span class="codec-radio-label"><strong>AV1</strong><span class="codec-radio-sub">Better compression.</span></span></label>
-              <label class="codec-radio-btn"><input type="radio" name="output_codec" value="h264"><span class="codec-radio-label"><strong>H.264</strong><span class="codec-radio-sub">Universal compatibility.</span></span></label>
-              <label class="codec-radio-btn"><input type="radio" name="output_codec" value="vp9"><span class="codec-radio-label"><strong>VP9</strong><span class="codec-radio-sub">Open codec. CPU only.</span></span></label>
+              <label class="codec-radio-btn">
+                <input type="radio" name="output_codec" value="hevc">
+                <span class="codec-radio-label"><strong>HEVC / H.265</strong><span class="codec-radio-sub">Best all-round choice. Hardware decode on all modern GPUs, smart TVs, and phones. Significantly smaller files than H.264 at equal quality.</span></span>
+              </label>
+              <label class="codec-radio-btn">
+                <input type="radio" name="output_codec" value="av1">
+                <span class="codec-radio-label"><strong>AV1</strong><span class="codec-radio-sub">Best compression — smaller files than HEVC at equal quality. Hardware encode requires RTX 40xx+, Intel Arc / 12th gen+, or RX 7000+. Playback requires newer devices.</span></span>
+              </label>
+              <label class="codec-radio-btn">
+                <input type="radio" name="output_codec" value="h264">
+                <span class="codec-radio-label"><strong>H.264 / AVC</strong><span class="codec-radio-sub">Universal compatibility — plays on everything. Files are larger than HEVC at equal quality. Good choice for maximum device support.</span></span>
+              </label>
+              <label class="codec-radio-btn">
+                <input type="radio" name="output_codec" value="vp9">
+                <span class="codec-radio-label"><strong>VP9</strong><span class="codec-radio-sub">Open codec required for Tower Unite and some web platforms. Always software-encoded (libvpx-vp9) regardless of hardware accelerator setting.</span></span>
+              </label>
             </div>
           </div>
           <div class="settings-field">
-            <label class="modal-label">Quality (CQ) <span id="settings-cq-display" class="settings-cq-display">24</span></label>
+            <label class="modal-label">Quality (CQ / QP) <span id="settings-cq-display" class="settings-cq-display">24</span></label>
             <input id="settings-cq" type="range" class="settings-range" min="0" max="51" value="24">
+            <div class="settings-range-labels"><span>0 — Best quality</span><span>51 — Smallest file</span></div>
+            <p class="modal-hint">Controls the trade-off between visual quality and file size. 18–28 is the typical range for high-quality encodes. Lower numbers produce better quality at the cost of larger files. Default: 24.</p>
           </div>
           <div class="settings-field">
             <label class="modal-label">Output Container</label>
             <select id="settings-output-container" class="modal-input">
-              <option value="mkv">MKV</option>
-              <option value="mp4">MP4</option>
-              <option value="webm">WebM</option>
+              <option value="mkv">MKV (Matroska) — full feature support: all codecs, subtitles, attachments</option>
+              <option value="mp4">MP4 — broad device compatibility, forces AAC audio, no subtitles</option>
+              <option value="webm">WebM — VP9 + Opus only, no subtitles or attachments</option>
             </select>
+            <p class="modal-hint">MKV is recommended for general use. MP4 offers the widest playback compatibility (TVs, phones, media players) but strips subtitles and forces AAC audio. WebM is required for VP9 with Opus audio.</p>
           </div>
           <div class="settings-field">
-            <label class="modal-label">Scale</label>
+            <label class="modal-label">Scale / Resolution</label>
             <select id="settings-scale-height" class="modal-input">
-              <option value="0">Original</option>
+              <option value="0">Original (no scaling)</option>
               <option value="2160">4K (2160p)</option>
               <option value="1080">1080p</option>
               <option value="720">720p</option>
               <option value="480">480p</option>
             </select>
+            <p class="modal-hint">Downscale video to this height while preserving the original aspect ratio (uses Lanczos filter). Useful for reducing file size on 4K content you only watch on 1080p displays, or for Tower Unite media. Only downscales — files already smaller than the target are not upscaled.</p>
           </div>
           <div class="settings-field">
             <label class="modal-label">Pixel Format</label>
             <select id="settings-pix-fmt" class="modal-input">
-              <option value="auto">Auto</option>
-              <option value="yuv420p">yuv420p (8-bit)</option>
-              <option value="yuv420p10le">yuv420p10le (10-bit)</option>
+              <option value="auto">Auto (match source)</option>
+              <option value="yuv420p">yuv420p — 8-bit, widest device compatibility</option>
+              <option value="yuv420p10le">yuv420p10le — 10-bit, required for HDR content</option>
             </select>
+            <p class="modal-hint">Forces a specific pixel format. Auto lets the encoder decide based on the source. Use <code>yuv420p</code> for maximum compatibility with older devices and media players. Use <code>yuv420p10le</code> to preserve 10-bit HDR. Not applied to VA-API encodes (VA-API manages pixel format internally).</p>
           </div>
           <div class="settings-field">
             <label class="modal-label">Encoder Speed</label>
             <select id="settings-encoder-speed" class="modal-input">
-              <option value="fast">Fast</option>
-              <option value="medium">Medium</option>
-              <option value="slow">Slow</option>
-              <option value="veryslow">Very Slow</option>
+              <option value="fast">Fast — quick encode, slightly larger file</option>
+              <option value="medium">Medium — balanced (default)</option>
+              <option value="slow">Slow — better compression, longer encode</option>
+              <option value="veryslow">Very Slow — best compression, much longer encode</option>
             </select>
+            <p class="modal-hint">Controls the speed vs. compression efficiency trade-off. Slower presets take more time but produce smaller files at the same quality. Maps to NVENC presets (p2–p7), QSV fast/slow, AMF speed/quality, libx265/libx264 preset names, or VP9 cpu-used value.</p>
           </div>
           <div class="settings-field">
-            <label class="modal-label">Subtitles</label>
+            <label class="modal-label">Subtitle Mode</label>
             <select id="settings-subtitle-mode" class="modal-input">
-              <option value="copy">Copy compatible tracks</option>
-              <option value="strip">Strip all</option>
+              <option value="copy">Copy — include subtitle tracks (MKV only, filtered by language)</option>
+              <option value="strip">Strip — remove all subtitle tracks from the output</option>
             </select>
+            <p class="modal-hint">Whether to include subtitle tracks in the encoded output. Copy passes subtitle tracks through filtered by your language selection. Strip removes all subtitles. Note: subtitles are always dropped for MP4 and WebM containers regardless of this setting.</p>
           </div>
         </div>
 
         <!-- Audio tab -->
         <div id="stab-audio" class="settings-tab-content">
           <div class="settings-field">
-            <label class="modal-label">Audio Re-encode Action</label>
+            <label class="modal-label">Lossy Track Handling</label>
             <select id="settings-audio-action" class="modal-input">
-              <option value="opus">Convert to Opus</option>
-              <option value="aac">Convert to AAC</option>
-              <option value="copy">Copy tracks (no re-encode)</option>
+              <option value="opus">Re-encode to Opus — best quality/size ratio, 320 kbps 5.1 / 192 kbps stereo</option>
+              <option value="aac">Re-encode to AAC — broad device compatibility, 256 kbps 5.1 / 160 kbps stereo</option>
+              <option value="copy">Copy all tracks — keep every audio stream exactly as-is</option>
             </select>
+            <p class="modal-hint">Applies to lossy tracks: EAC3 (Dolby Digital+), AC3 (Dolby Digital), DTS, AAC, and MP3. Lossless tracks (TrueHD, DTS-HD MA, FLAC, PCM) are always copied without re-encoding regardless of this setting. If no matching language track is found, the first audio track is kept as a fallback.</p>
           </div>
           <div class="settings-field">
-            <label class="modal-label">Preferred Languages</label>
+            <label class="modal-label">Keep Audio Languages</label>
             <div class="lang-chips-container">
               <label class="lang-chip-all"><input type="checkbox" id="settings-lang-all"> Keep all languages</label>
               <div id="settings-lang-chips" class="lang-chips">
@@ -611,16 +634,23 @@
                 <label class="lang-chip"><input type="checkbox" value="rus"><span>Russian</span></label>
               </div>
             </div>
+            <p class="modal-hint">Audio and subtitle tracks for these languages are kept in the output. Tracks in other languages are dropped. Enable "Keep all languages" to include every track regardless of language. If no matching track is found, the first audio track is always kept as a fallback.</p>
           </div>
           <div class="settings-field">
             <div class="settings-toggle-row">
-              <span><span class="modal-label" style="display:inline">Force Stereo Downmix</span></span>
+              <span>
+                <span class="modal-label" style="display:inline">Force Stereo Downmix</span>
+                <p class="modal-hint" style="margin-top:4px">Downmix all audio tracks to stereo (2.0) during re-encoding. Useful for devices that don't support surround sound, or for Tower Unite which only uses stereo. Only affects tracks that are being re-encoded — lossless and copied tracks are unaffected.</p>
+              </span>
               <label class="toggle-switch"><input type="checkbox" id="settings-force-stereo"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
             </div>
           </div>
           <div class="settings-field">
             <div class="settings-toggle-row">
-              <span><span class="modal-label" style="display:inline">Loudness Normalization</span></span>
+              <span>
+                <span class="modal-label" style="display:inline">Loudness Normalization</span>
+                <p class="modal-hint" style="margin-top:4px">Apply EBU R128 loudness normalization to re-encoded audio tracks. Targets −23 LUFS with a true peak of −2 dBTP. Useful for libraries with inconsistent volume levels across different sources. Only affects tracks that are being re-encoded.</p>
+              </span>
               <label class="toggle-switch"><input type="checkbox" id="settings-audio-normalize"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
             </div>
           </div>
@@ -631,10 +661,14 @@
           <div class="settings-field">
             <label class="modal-label">High Bitrate Threshold (kbps)</label>
             <input id="settings-threshold" type="number" class="modal-input" min="1000" step="1000" placeholder="25000" />
+            <p class="modal-hint">Files with a bitrate above this value are flagged for optimization. Default: 25000 kbps (25 Mbps). Files flagged by bitrate are good candidates for re-encoding since modern codecs can typically match or exceed their quality at a fraction of the size. Takes effect on future scans — rescan your folders after changing this to re-evaluate existing files.</p>
           </div>
           <div class="settings-field">
             <div class="settings-toggle-row">
-              <span><span class="modal-label" style="display:inline">Flag AV1 files</span></span>
+              <span>
+                <span class="modal-label" style="display:inline">Flag AV1 files for optimization</span>
+                <p class="modal-hint" style="margin-top:4px">Flag AV1 files so they appear in the optimization queue. Disable this if AV1 is your preferred output codec or your devices support AV1 natively. Takes effect immediately — no rescan needed.</p>
+              </span>
               <label class="toggle-switch"><input type="checkbox" id="settings-flag-av1"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
             </div>
           </div>
@@ -644,7 +678,10 @@
         <div id="stab-network" class="settings-tab-content">
           <div class="settings-field">
             <div class="settings-toggle-row">
-              <span><span class="modal-label" style="display:inline">Enable Web UI</span></span>
+              <span>
+                <span class="modal-label" style="display:inline">Enable Web UI</span>
+                <p class="modal-hint" style="margin-top:4px">Allow other devices on your network to access the Conduit interface via a web browser. When disabled, Conduit only listens on localhost and is not accessible from other devices. Requires a restart to take effect.</p>
+              </span>
               <label class="toggle-switch"><input type="checkbox" id="settings-web-ui-enabled"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
             </div>
           </div>
@@ -652,19 +689,21 @@
             <div class="settings-field">
               <label class="modal-label">Bind Address</label>
               <input id="settings-web-ui-host" type="text" class="modal-input" placeholder="0.0.0.0" />
+              <p class="modal-hint">IP address to listen on. Use <code>0.0.0.0</code> to accept connections on all network interfaces, or enter a specific IP (e.g. <code>192.168.1.10</code>) to restrict access to one interface. Requires a restart to take effect.</p>
             </div>
             <div class="settings-field">
               <label class="modal-label">Web UI Port</label>
               <input id="settings-web-ui-port" type="number" class="modal-input" min="1" max="65535" placeholder="8000" />
+              <p class="modal-hint">Port that network clients connect to. Default: 8000. Make sure this port is not blocked by your firewall. Requires a restart to take effect.</p>
             </div>
             <div class="custom-encode-divider"></div>
             <div class="settings-field">
-              <label class="modal-label">Web UI Credentials</label>
+              <label class="modal-label">Web UI Credentials (optional)</label>
               <div style="display:flex;gap:10px;margin-top:5px">
                 <input id="settings-web-ui-username" type="text" class="modal-input" placeholder="Username" style="flex:1" />
                 <input id="settings-web-ui-password" type="password" class="modal-input" placeholder="Password" style="flex:1" />
               </div>
-              <p class="modal-hint">Set a username and password to secure the Web UI. CHANGES REQUIRE RESTART.</p>
+              <p class="modal-hint">Set a username and password to protect the Web UI with HTTP Basic Auth. Leave both blank for no authentication. Credentials are stored in <code>config.json</code>. Requires a restart to take effect.</p>
             </div>
           </div>
         </div>
@@ -675,6 +714,7 @@
             <span class="modal-label">Encode Presets</span>
             <button id="preset-new-btn" class="btn-preset-new">+ New Preset</button>
           </div>
+          <p class="modal-hint" style="margin-bottom:12px">Presets let you save and quickly load a full set of encode settings in the Encode modal. Useful for workflows you repeat often — for example, a Tower Unite preset, a high-quality archive preset, or a quick 720p web preset. Built-in presets are read-only.</p>
           <div id="presets-list" class="presets-list"></div>
           <div id="preset-editor" class="preset-editor hidden">
             <div class="preset-editor-title" id="preset-editor-title">New Preset</div>
@@ -701,6 +741,7 @@
             <span class="modal-label">Previously Optimized Files</span>
             <button id="db-reflag-all-btn" class="btn-db-reflag-all">Re-flag All</button>
           </div>
+          <p class="modal-hint" style="margin-bottom:12px">Files that have had a completed encode or remux job. Once a file is optimized, Conduit marks it as done and removes it from the optimization queue. Use Re-flag to put a file back in the queue — for example, if you changed your quality settings and want to re-encode it, or if you want to remux a file you previously encoded.</p>
           <div id="db-optimized-list" class="db-optimized-list"></div>
         </div>
       </div>
