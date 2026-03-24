@@ -380,10 +380,9 @@ def start_scan(folder_id: int, folder_path: str, ffprobe_path: str, threshold_kb
     """Queue a folder scan. Starts immediately if idle, otherwise enqueues (deduplicates)."""
     global _scan_status
     with _scan_lock:
-        # Deduplicate: skip if this folder is already the active scan
-        if _scan_status.scanning and _scan_status.folder_id == folder_id:
-            return
         # Deduplicate: skip if already waiting in the queue
+        # (we intentionally allow queuing a re-scan of the currently active folder
+        # so that files added mid-scan are caught by the follow-up scan)
         if any(item[0] == folder_id for item in _scan_queue):
             return
 
