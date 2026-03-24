@@ -893,9 +893,14 @@ function handleOptimize() {
 
 let _dragCounter = 0;  // track nested dragenter/dragleave events
 
+function _hasDragFiles(types) {
+  // File managers on Linux provide 'text/uri-list'; browsers use 'Files'
+  return types?.includes('Files') || types?.includes('text/uri-list');
+}
+
 function _initDragAndDrop() {
   document.addEventListener('dragenter', e => {
-    if (!e.dataTransfer?.types?.includes('Files')) return;
+    if (!_hasDragFiles(e.dataTransfer?.types)) return;
     e.preventDefault();
     _dragCounter++;
     DOM.dropOverlay.classList.remove('hidden');
@@ -910,7 +915,7 @@ function _initDragAndDrop() {
   });
 
   document.addEventListener('dragover', e => {
-    if (!e.dataTransfer?.types?.includes('Files')) return;
+    if (!_hasDragFiles(e.dataTransfer?.types)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
   });
@@ -920,16 +925,32 @@ function _initDragAndDrop() {
     _dragCounter = 0;
     DOM.dropOverlay.classList.add('hidden');
 
-    const files = e.dataTransfer?.files;
-    if (!files || files.length === 0) return;
-
-    // webkit2gtk exposes file.path (non-standard); fall back to file.name in browser contexts
     const paths = [];
-    for (let i = 0; i < files.length; i++) {
-      const f = files[i];
-      const p = f.path || f.webkitRelativePath || f.name;
-      if (p) paths.push(p);
+
+    // Try Files API first — webkit2gtk exposes file.path for files
+    const files = e.dataTransfer?.files;
+    if (files?.length) {
+      for (let i = 0; i < files.length; i++) {
+        const p = files[i].path;
+        if (p) paths.push(p);
+      }
     }
+
+    // Fall back to text/uri-list — file managers use this for folders and files
+    if (paths.length === 0) {
+      const uriList = e.dataTransfer?.getData('text/uri-list');
+      if (uriList) {
+        for (const line of uriList.split(/\r?\n/)) {
+          const uri = line.trim();
+          if (!uri || uri.startsWith('#')) continue;
+          try {
+            const url = new URL(uri);
+            if (url.protocol === 'file:') paths.push(decodeURIComponent(url.pathname));
+          } catch {}
+        }
+      }
+    }
+
     if (paths.length === 0) return;
 
     try {
