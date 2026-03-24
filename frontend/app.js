@@ -1838,14 +1838,20 @@ async function pollScanStatus() {
     if (status.scanning) {
       DOM.scanIndicator.classList.remove('hidden');
       DOM.scanIdle.classList.add('hidden');
-      const pct = status.total > 0 ? Math.round((status.scanned / status.total) * 100) : 0;
+      const queued = status.queued || 0;
+      const queuedSuffix = queued > 0 ? ` (+${queued} queued)` : '';
       DOM.scanLabel.textContent = status.current_file
-        ? `Scanning ${status.scanned}/${status.total} — ${status.current_file}`
-        : `Scanning…`;
+        ? `Scanning ${status.scanned}/${status.total} — ${status.current_file}${queuedSuffix}`
+        : `Scanning…${queuedSuffix}`;
 
       if (!scanPollTimer) {
         scanPollTimer = setInterval(pollScanStatus, 2000);
       }
+    } else if ((status.queued || 0) > 0) {
+      // Scans are queued but briefly idle between jobs — keep indicator visible
+      DOM.scanIndicator.classList.remove('hidden');
+      DOM.scanIdle.classList.add('hidden');
+      DOM.scanLabel.textContent = `Starting next scan… (${status.queued} queued)`;
     } else {
       DOM.scanIndicator.classList.add('hidden');
       DOM.scanIdle.classList.remove('hidden');

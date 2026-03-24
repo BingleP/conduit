@@ -3,6 +3,7 @@ import os
 import subprocess
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
@@ -17,6 +18,7 @@ from database import db_session
 @dataclass
 class ScanStatus:
     scanning: bool = False
+    folder_id: int = 0
     current_file: str = ""
     scanned: int = 0
     total: int = 0
@@ -39,13 +41,17 @@ class ScanStatus:
         }
 
 
+# Each entry: (folder_id, folder_path, ffprobe_path, threshold_kbps, flag_av1)
+_scan_queue: deque = deque()
 _scan_status = ScanStatus()
 _scan_lock = threading.Lock()
 
 
 def get_scan_status() -> dict:
     with _scan_lock:
-        return _scan_status.to_dict()
+        d = _scan_status.to_dict()
+        d["queued"] = len(_scan_queue)
+    return d
 
 
 # ---------------------------------------------------------------------------
@@ -242,17 +248,7 @@ def _find_video_files(folder_path: str) -> list:
 
 def scan_folder(folder_id: int, folder_path: str, ffprobe_path: str, threshold_kbps: int,
                 flag_av1: bool = True):
-    """Scan a folder in a background thread, updating _scan_status."""
-    global _scan_status
-
-    with _scan_lock:
-        if _scan_status.scanning:
-            return
-        _scan_status = ScanStatus(
-            scanning=True,
-            started_at=time.time(),
-        )
-
+    """Scan a folder; called from a daemon thread. _scan_status.scanning is already True on entry."""
     try:
         files = _find_video_files(folder_path)
 
@@ -346,14 +342,53 @@ def scan_folder(folder_id: int, folder_path: str, ffprobe_path: str, threshold_k
             _scan_status.scanned = _scan_status.total
             _scan_status.current_file = ""
             _scan_status.finished_at = time.time()
+        # Start the next queued scan, if any
+        _start_next_scan()
+
+
+def _start_next_scan():
+    """Pop and start the next queued scan, if any. Must NOT be called while holding _scan_lock."""
+    global _scan_status
+    with _scan_lock:
+        if not _scan_queue or _scan_status.scanning:
+            return
+        folder_id, folder_path, ffprobe_path, threshold_kbps, flag_av1 = _scan_queue.popleft()
+        _scan_status = ScanStatus(
+            scanning=True,
+            folder_id=folder_id,
+            started_at=time.time(),
+        )
+    t = threading.Thread(
+        target=scan_folder,
+        args=(folder_id, folder_path, ffprobe_path, threshold_kbps, flag_av1),
+        daemon=True,
+    )
+    t.start()
 
 
 def start_scan(folder_id: int, folder_path: str, ffprobe_path: str, threshold_kbps: int,
                flag_av1: bool = True):
-    """Launch scan in a daemon thread, preventing concurrent scans."""
+    """Queue a folder scan. Starts immediately if idle, otherwise enqueues (deduplicates)."""
+    global _scan_status
     with _scan_lock:
-        if _scan_status.scanning:
+        # Deduplicate: skip if this folder is already the active scan
+        if _scan_status.scanning and _scan_status.folder_id == folder_id:
             return
+        # Deduplicate: skip if already waiting in the queue
+        if any(item[0] == folder_id for item in _scan_queue):
+            return
+
+        if _scan_status.scanning:
+            # Another scan is running — enqueue for later
+            _scan_queue.append((folder_id, folder_path, ffprobe_path, threshold_kbps, flag_av1))
+            return
+
+        # Idle — start immediately
+        _scan_status = ScanStatus(
+            scanning=True,
+            folder_id=folder_id,
+            started_at=time.time(),
+        )
 
     t = threading.Thread(
         target=scan_folder,
