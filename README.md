@@ -14,6 +14,7 @@ A desktop application for scanning your video library, identifying files that wo
 - **Filters** audio and subtitle tracks by language, re-encodes lossy audio to Opus/AAC, copies lossless tracks
 - **Custom Encode** — queue any selection of files with per-batch overrides and a custom output directory
 - **Presets** — save and reuse custom encode configurations; six built-in presets included
+- **Drag-and-drop** — drop files or folders onto the window; choose Custom Encode or Optimize from a popup
 
 Runs as a desktop app (native window via pywebview) with an optional Web UI for network access.
 
@@ -295,6 +296,21 @@ If multiple selected files share the same filename stem and would write to the s
 ### HDR handling
 
 When the selection contains HDR files (HDR10+, Dolby Vision), a prompt appears asking whether to remux or re-encode them. Non-HDR files in the same batch are always encoded without prompting.
+
+---
+
+## Drag-and-Drop
+
+Drag any video files or folders from your file manager and drop them onto the Conduit window.
+
+A popup appears asking what to do with the dropped files:
+
+- **Custom Encode** — opens the encode modal so you can choose settings for this batch before queuing
+- **Optimize** — queues the files immediately using your global settings, same as the Optimize button
+
+Dropped files that are not yet in your library are probed automatically and added to the queue. Files that are already tracked by Conduit are reused as-is.
+
+Dropping a folder expands to all video files within it (including subdirectories).
 
 ---
 

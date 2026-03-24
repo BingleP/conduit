@@ -29,6 +29,7 @@ from encoder import (
 from scanner import (
     get_scan_status, start_scan,
     start_watcher, watch_folder, unwatch_folder, set_watcher_scan_settings,
+    probe_file, parse_probe, _find_video_files, VIDEO_EXTENSIONS,
 )
 
 # ---------------------------------------------------------------------------
@@ -499,6 +500,19 @@ def update_settings(req: UpdateSettingsRequest):
 # Folders
 # ---------------------------------------------------------------------------
 
+_DROPPED_FOLDER_PATH = "__dropped__"
+
+
+def _get_or_create_dropped_folder(conn) -> int:
+    """Return the id of the virtual __dropped__ folder, creating it if needed."""
+    row = conn.execute("SELECT id FROM folders WHERE path=?", (_DROPPED_FOLDER_PATH,)).fetchone()
+    if row:
+        return row["id"]
+    cur = conn.execute("INSERT INTO folders (path) VALUES (?)", (_DROPPED_FOLDER_PATH,))
+    conn.commit()
+    return cur.lastrowid
+
+
 @app.get("/api/folders")
 def list_folders():
     with db_session() as conn:
@@ -508,9 +522,10 @@ def list_folders():
                    COALESCE(SUM(fi.size_bytes), 0) as total_size
             FROM folders f
             LEFT JOIN files fi ON fi.folder_id = f.id
+            WHERE f.path != ?
             GROUP BY f.id
             ORDER BY f.added_at DESC
-        """).fetchall()
+        """, (_DROPPED_FOLDER_PATH,)).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -906,6 +921,104 @@ def delete_preset(preset_id: str):
         raise HTTPException(status_code=404, detail="Preset not found")
     _save_config()
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Drop resolution
+# ---------------------------------------------------------------------------
+
+class ResolveDropsRequest(BaseModel):
+    paths: list[str]
+
+
+@app.post("/api/resolve-drops")
+def resolve_drops(req: ResolveDropsRequest):
+    """Resolve a list of dropped paths (files or folders) to file DB records.
+    Files not yet in the DB are probed and inserted into the virtual __dropped__ folder.
+    Returns a list of file record dicts that can be used directly as encode targets."""
+    # Expand folder paths to individual video files
+    video_paths: list[str] = []
+    for p in req.paths:
+        p = os.path.realpath(p)
+        if os.path.isdir(p):
+            video_paths.extend(_find_video_files(p))
+        elif os.path.isfile(p) and os.path.splitext(p)[1].lower() in VIDEO_EXTENSIONS:
+            video_paths.append(p)
+
+    if not video_paths:
+        return {"files": []}
+
+    result = []
+    with db_session() as conn:
+        dropped_folder_id = None  # lazy-create only if needed
+
+        for vp in video_paths:
+            # Check if already tracked in DB
+            row = conn.execute(
+                "SELECT f.*, fo.path as folder_path FROM files f JOIN folders fo ON fo.id = f.folder_id WHERE f.path=?",
+                (vp,)
+            ).fetchone()
+            if row:
+                result.append(dict(row))
+                continue
+
+            # Probe and insert into __dropped__ virtual folder
+            probe = probe_file(FFPROBE_PATH, vp)
+            if probe is None:
+                continue  # skip unreadable files
+
+            info = parse_probe(probe, vp, THRESHOLD_KBPS, FLAG_AV1)
+
+            if dropped_folder_id is None:
+                dropped_folder_id = _get_or_create_dropped_folder(conn)
+
+            now = datetime.now(timezone.utc).isoformat()
+            cur = conn.execute(
+                """
+                INSERT INTO files (
+                    folder_id, path, filename,
+                    size_bytes, duration_s, bitrate_kbps,
+                    video_codec, video_profile, pix_fmt,
+                    width, height, hdr_type,
+                    color_transfer, color_space,
+                    audio_tracks, subtitle_tracks,
+                    has_attachments, needs_optimize,
+                    scanned_at, mtime
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    dropped_folder_id,
+                    vp,
+                    os.path.basename(vp),
+                    info["size_bytes"],
+                    info["duration_s"],
+                    info["bitrate_kbps"],
+                    info["video_codec"],
+                    info["video_profile"],
+                    info["pix_fmt"],
+                    info["width"],
+                    info["height"],
+                    info["hdr_type"],
+                    info["color_transfer"],
+                    info["color_space"],
+                    info["audio_tracks"],
+                    info["subtitle_tracks"],
+                    info["has_attachments"],
+                    info["needs_optimize"],
+                    now,
+                    os.path.getmtime(vp),
+                ),
+            )
+            conn.commit()
+            file_id = cur.lastrowid
+            row = conn.execute(
+                "SELECT f.*, fo.path as folder_path FROM files f JOIN folders fo ON fo.id = f.folder_id WHERE f.id=?",
+                (file_id,)
+            ).fetchone()
+            if row:
+                result.append(dict(row))
+
+    return {"files": result}
 
 
 # ---------------------------------------------------------------------------

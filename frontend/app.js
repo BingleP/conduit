@@ -42,6 +42,7 @@ const state = {
   flaggedFiles: [],
   openFileId: null,
   bitrateThreshold: 25000,
+  _dropResolvedFiles: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -209,6 +210,13 @@ function initDOM() {
 
   DOM.flagPopover        = $('flag-popover');
   DOM.flagPopoverContent = $('flag-popover-content');
+
+  DOM.dropOverlay        = $('drop-overlay');
+  DOM.dropChoiceModal    = $('drop-choice-modal');
+  DOM.dropChoiceCount    = $('drop-choice-count');
+  DOM.dropChoicePlural   = $('drop-choice-plural');
+  DOM.dropCustomEncodeBtn = $('drop-custom-encode-btn');
+  DOM.dropOptimizeBtn    = $('drop-optimize-btn');
 }
 
 // ---------------------------------------------------------------------------
@@ -880,6 +888,68 @@ function handleOptimize() {
 }
 
 // ---------------------------------------------------------------------------
+// Drag-and-drop
+// ---------------------------------------------------------------------------
+
+let _dragCounter = 0;  // track nested dragenter/dragleave events
+
+function _initDragAndDrop() {
+  document.addEventListener('dragenter', e => {
+    if (!e.dataTransfer?.types?.includes('Files')) return;
+    e.preventDefault();
+    _dragCounter++;
+    DOM.dropOverlay.classList.remove('hidden');
+  });
+
+  document.addEventListener('dragleave', e => {
+    _dragCounter--;
+    if (_dragCounter <= 0) {
+      _dragCounter = 0;
+      DOM.dropOverlay.classList.add('hidden');
+    }
+  });
+
+  document.addEventListener('dragover', e => {
+    if (!e.dataTransfer?.types?.includes('Files')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  });
+
+  document.addEventListener('drop', async e => {
+    e.preventDefault();
+    _dragCounter = 0;
+    DOM.dropOverlay.classList.add('hidden');
+
+    const files = e.dataTransfer?.files;
+    if (!files || files.length === 0) return;
+
+    // webkit2gtk exposes file.path (non-standard); fall back to file.name in browser contexts
+    const paths = [];
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      const p = f.path || f.webkitRelativePath || f.name;
+      if (p) paths.push(p);
+    }
+    if (paths.length === 0) return;
+
+    try {
+      const res = await POST('/api/resolve-drops', { paths });
+      const resolved = res?.files || [];
+      if (resolved.length === 0) return;
+
+      state._dropResolvedFiles = resolved;
+
+      const n = resolved.length;
+      DOM.dropChoiceCount.textContent = n;
+      DOM.dropChoicePlural.textContent = n !== 1 ? 's' : '';
+      openModal('drop-choice-modal');
+    } catch (err) {
+      console.error('resolve-drops failed:', err);
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Presets
 // ---------------------------------------------------------------------------
 
@@ -1205,8 +1275,8 @@ async function _deletePreset(id) {
   }
 }
 
-async function handleCustomEncode() {
-  const selectedFiles = state.files.filter(f => state.selectedIds.has(f.id));
+async function handleCustomEncode(filesOverride = null) {
+  const selectedFiles = filesOverride || state.files.filter(f => state.selectedIds.has(f.id));
   if (selectedFiles.length === 0) return;
 
   const count = selectedFiles.length;
@@ -2701,6 +2771,38 @@ document.addEventListener('DOMContentLoaded', async () => {
     const preset = _presetsCache?.find(p => p.id === id);
     if (preset) _settingsApplyPreset(preset);
   });
+
+  // Drop choice modal buttons
+  DOM.dropCustomEncodeBtn.addEventListener('click', () => {
+    closeModal('drop-choice-modal');
+    const files = state._dropResolvedFiles;
+    state._dropResolvedFiles = null;
+    if (files?.length) handleCustomEncode(files);
+  });
+
+  DOM.dropOptimizeBtn.addEventListener('click', () => {
+    closeModal('drop-choice-modal');
+    const files = state._dropResolvedFiles;
+    state._dropResolvedFiles = null;
+    if (!files?.length) return;
+
+    const hdrFiles    = files.filter(f => f.hdr_type === 'hdr10plus' || f.hdr_type === 'dolby_vision');
+    const normalFiles = files.filter(f => f.hdr_type !== 'hdr10plus' && f.hdr_type !== 'dolby_vision');
+
+    state._pendingHdrFileIds    = hdrFiles.map(f => f.id);
+    state._pendingNonHdrFileIds = normalFiles.map(f => f.id);
+    state._pendingKeepOriginal  = false;
+    state._pendingEncodeOverrides = null;
+
+    if (hdrFiles.length > 0) {
+      showHdrModal(hdrFiles);
+    } else {
+      submitJobs(normalFiles.map(f => f.id), 'encode', false);
+      state._pendingNonHdrFileIds = [];
+    }
+  });
+
+  _initDragAndDrop();
 
   loadFiltersFromStorage();
 

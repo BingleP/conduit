@@ -2976,3 +2976,91 @@ select.modal-input option:disabled {
   overflow-y: auto;
   margin: 0;
 }
+
+/* ============================================================
+   Drop Overlay
+   ============================================================ */
+
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.drop-overlay.hidden {
+  display: none;
+}
+
+.drop-overlay-inner {
+  border: 3px dashed var(--accent, #7b61ff);
+  border-radius: 16px;
+  padding: 48px 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  background: rgba(0,0,0,0.4);
+}
+
+.drop-overlay-icon {
+  font-size: 52px;
+  line-height: 1;
+  color: var(--accent, #7b61ff);
+}
+
+.drop-overlay-label {
+  font-size: 18px;
+  font-weight: 600;
+  color: #fff;
+  letter-spacing: 0.02em;
+}
+
+/* ============================================================
+   Drop Choice Modal
+   ============================================================ */
+
+.modal-drop-choice {
+  width: 440px;
+}
+
+.drop-choice-body {
+  padding: 20px 24px 8px;
+}
+
+.drop-choice-hint {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0 0 18px;
+}
+
+.drop-choice-btns {
+  display: flex;
+  gap: 12px;
+}
+
+.drop-choice-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.drop-choice-btn-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.drop-choice-btn-sub {
+  font-size: 11px;
+  opacity: 0.75;
+  font-weight: 400;
+}

@@ -920,6 +920,37 @@
     <div id="flag-popover-content" class="flag-popover-content"></div>
   </div>
 
+  <!-- Drop Overlay -->
+  <div id="drop-overlay" class="drop-overlay hidden">
+    <div class="drop-overlay-inner">
+      <div class="drop-overlay-icon">&#8681;</div>
+      <div class="drop-overlay-label">Drop files or folders to encode</div>
+    </div>
+  </div>
+
+  <!-- Drop Choice Modal -->
+  <div id="drop-choice-modal" class="modal-overlay hidden">
+    <div class="modal modal-drop-choice">
+      <div class="modal-header">
+        <span class="modal-title">Dropped <span id="drop-choice-count">0</span> file<span id="drop-choice-plural"></span></span>
+        <button class="modal-close" data-modal="drop-choice-modal">&times;</button>
+      </div>
+      <div class="modal-body drop-choice-body">
+        <p class="drop-choice-hint">What would you like to do with the dropped files?</p>
+        <div class="drop-choice-btns">
+          <button id="drop-custom-encode-btn" class="btn-confirm drop-choice-btn">
+            <span class="drop-choice-btn-title">Custom Encode</span>
+            <span class="drop-choice-btn-sub">Choose settings for this batch</span>
+          </button>
+          <button id="drop-optimize-btn" class="btn-confirm drop-choice-btn">
+            <span class="drop-choice-btn-title">Optimize</span>
+            <span class="drop-choice-btn-sub">Use global settings &amp; flag rules</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>

@@ -70,3 +70,16 @@ Use the `.ce-toggle-item` / `.ce-toggle-label` pattern for all toggle checkboxes
   <span class="ce-toggle-label">Label Text</span>
 </label>
 ```
+
+## Drag-and-Drop
+
+Files and folders can be dropped onto the Conduit window. The drop flow:
+
+1. **Drag over** → full-screen `#drop-overlay` appears
+2. **Drop** → paths extracted from `e.dataTransfer.files[i].path` (webkit2gtk extension)
+3. **`POST /api/resolve-drops`** → resolves paths to DB file records; new files are probed with ffprobe and inserted into the virtual `__dropped__` folder (path `"__dropped__"`, filtered from the folders UI)
+4. **`#drop-choice-modal`** → user picks "Custom Encode" (opens `#custom-encode-modal` with resolved files) or "Optimize" (queues with global settings)
+
+`handleCustomEncode(filesOverride)` accepts an optional file list; if passed, uses it instead of `state.selectedIds`.
+
+The `__dropped__` folder is excluded from `GET /api/folders` via a `WHERE f.path != '__dropped__'` filter.
