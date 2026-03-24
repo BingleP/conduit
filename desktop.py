@@ -159,69 +159,56 @@ def _setup_gtk_dnd(pywebview_window):
 def _setup_qt_dnd(pywebview_window):
     try:
         from PyQt6.QtWidgets import QApplication
-        from PyQt6.QtCore import QObject, QEvent, QTimer
+        from PyQt6.QtCore import QObject, QEvent
     except ImportError:
         from PySide6.QtWidgets import QApplication
-        from PySide6.QtCore import QObject, QEvent, QTimer
+        from PySide6.QtCore import QObject, QEvent
 
     app = QApplication.instance()
     if app is None:
         raise RuntimeError("No QApplication instance")
 
-    def _do_setup():
+    try:
+        from PyQt6.QtWebEngineWidgets import QWebEngineView
+    except ImportError:
         try:
-            from PyQt6.QtWidgets import QApplication
-            from PyQt6.QtCore import QObject, QEvent, QTimer
+            from PySide6.QtWebEngineWidgets import QWebEngineView
         except ImportError:
-            from PySide6.QtWidgets import QApplication
-            from PySide6.QtCore import QObject, QEvent, QTimer
+            QWebEngineView = None
 
-        class _DropFilter(QObject):
-            def eventFilter(self, obj, event):
-                t = event.type()
-                if t == QEvent.Type.DragEnter:
-                    if event.mimeData().hasUrls():
-                        event.acceptProposedAction()
-                        return True
-                elif t == QEvent.Type.DragMove:
-                    if event.mimeData().hasUrls():
-                        event.acceptProposedAction()
-                        return True
-                elif t == QEvent.Type.Drop:
-                    urls = event.mimeData().urls()
-                    paths = [u.toLocalFile() for u in urls if u.isLocalFile()]
-                    if paths:
-                        js = f'window._pyDroppedPaths({_json.dumps(paths)})'
-                        QTimer.singleShot(0, lambda: _eval_js(pywebview_window, js))
+    class _DropFilter(QObject):
+        def eventFilter(self, obj, event):
+            t = event.type()
+            if t == QEvent.Type.DragEnter:
+                if event.mimeData().hasUrls():
                     event.acceptProposedAction()
                     return True
-                return False
+            elif t == QEvent.Type.DragMove:
+                if event.mimeData().hasUrls():
+                    event.acceptProposedAction()
+                    return True
+            elif t == QEvent.Type.Drop:
+                urls = event.mimeData().urls()
+                paths = [u.toLocalFile() for u in urls if u.isLocalFile()]
+                if paths:
+                    js = f'window._pyDroppedPaths({_json.dumps(paths)})'
+                    _eval_js(pywebview_window, js)
+                event.acceptProposedAction()
+                return True
+            return False
 
-        drop_filter = _DropFilter()
+    drop_filter = _DropFilter()
+    app.installEventFilter(drop_filter)
 
-        # Install on QApplication to catch all widgets
-        app.installEventFilter(drop_filter)
+    for widget in app.topLevelWidgets():
+        if widget.isVisible():
+            widget.setAcceptDrops(True)
+            if QWebEngineView:
+                for wv in widget.findChildren(QWebEngineView):
+                    wv.setAcceptDrops(True)
 
-        # Also install directly on top-level widgets and their webview children
-        try:
-            from PyQt6.QtWebEngineWidgets import QWebEngineView
-        except ImportError:
-            try:
-                from PySide6.QtWebEngineWidgets import QWebEngineView
-            except ImportError:
-                QWebEngineView = None
-
-        for widget in app.topLevelWidgets():
-            if widget.isVisible():
-                widget.setAcceptDrops(True)
-                if QWebEngineView:
-                    for wv in widget.findChildren(QWebEngineView):
-                        wv.setAcceptDrops(True)
-
-        app._conduit_drop_filter = drop_filter  # prevent GC
-        log.info("Qt DnD: event filter installed")
-
-    QTimer.singleShot(0, _do_setup)
+    app._conduit_drop_filter = drop_filter  # prevent GC
+    log.info("Qt DnD: event filter installed")
 
 
 def _find_gtk_webview(container):
