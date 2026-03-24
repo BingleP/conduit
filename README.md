@@ -7,6 +7,7 @@ A desktop application for scanning your video library, identifying files that wo
 ## What it does
 
 - **Scans** media folders and extracts technical metadata from every video file using `ffprobe`
+- **Watches** folders for changes — new or removed files are detected automatically without a manual rescan
 - **Flags** files that need optimization based on configurable rules (high bitrate, H.264 Hi10P, AV1)
 - **Encodes** flagged files using hardware-accelerated (or software) ffmpeg, with configurable codec, quality, container, resolution, and audio options
 - **Remuxes** files into MKV without re-encoding when appropriate (e.g. HDR content)
@@ -23,6 +24,7 @@ Runs as a desktop app (native window via pywebview) with an optional Web UI for 
 - Linux (Arch, Debian/Ubuntu, Fedora, openSUSE)
 - Python 3.10+
 - ffmpeg and ffprobe
+- watchdog (installed automatically — enables live folder monitoring)
 - A supported GPU **or** CPU for encoding:
   - **NVIDIA** — GTX 900 series or newer (NVENC)
   - **Intel** — 6th gen Core or newer (Quick Sync)
@@ -169,7 +171,7 @@ All settings are accessible from the gear icon in the top-right corner of the ap
 | Scale Height | Downscale video to this height (e.g. 1080, 720). Aspect ratio is preserved. `Auto` leaves resolution unchanged | `auto` |
 | Pixel Format | Force a specific pixel format (e.g. `yuv420p` for maximum compatibility). `Auto` preserves the source pixel format | `auto` |
 | Encoder Speed | Speed/quality trade-off preset (slow → fast). Faster presets encode quicker at the cost of slightly larger files | `medium` |
-| Subtitle Mode | How to handle subtitle tracks: `copy` (pass through unchanged) or `drop` (remove all subtitles) | `copy` |
+| Subtitle Mode | How to handle subtitle tracks: `copy` (pass through unchanged) or `strip` (remove all subtitles) | `copy` |
 
 **VP9** always uses `libvpx-vp9` regardless of the hardware accelerator setting, as VP9 hardware encoding is not widely supported.
 
@@ -212,6 +214,20 @@ Network changes require a restart to take effect.
 
 ---
 
+## Folder Monitoring
+
+Conduit automatically watches every added folder for file changes using OS-native filesystem events (inotify on Linux).
+
+**While the app is open**, any video file added, removed, or renamed in a watched folder triggers an incremental re-scan. A short debounce period (3 seconds) lets file copies and batch moves settle before the scan runs, so copying 50 files in results in one scan, not 50.
+
+**When the app is reopened**, every folder in your library is immediately queued for an incremental scan. Only files whose modification time has changed since the last scan are re-probed with ffprobe — unchanged files are skipped, so startup scans on large libraries are fast.
+
+**Scan queue**: scans run one folder at a time. If multiple folders trigger re-scans simultaneously (for example, all folders on startup), they queue up and run sequentially. The scan indicator in the top bar shows the current folder progress and how many scans are waiting.
+
+No manual rescans are needed for day-to-day library updates. The **Rescan** button remains available if you need to force a full re-probe (for example, after changing the bitrate threshold or AV1 flagging setting).
+
+---
+
 ## Presets
 
 The **Presets** tab (accessible from Settings) lets you save and reuse custom encode configurations.
@@ -220,16 +236,13 @@ Each preset stores a full set of encode overrides — codec, quality, container,
 
 ### Built-in preset: Tower Unite
 
-The **Tower Unite** preset is included by default. It targets VP9 / WebM, which is the format required for custom media in Tower Unite. Settings:
+The **Tower Unite** preset is included by default. It targets VP9 + Opus in WebM, which is the format required for synced playback in Tower Unite condos without CEFCodecFix. Settings:
 
+- Hardware Accelerator: Software (VP9 is always software-encoded)
 - Codec: VP9
+- Audio: Opus
 - Container: WebM
 - Quality: 31
-- Scale Height: 1080
-- Pixel Format: yuv420p
-- Encoder Speed: good (VP9 naming)
-- Subtitle Mode: drop
-- Force Stereo: on
 
 ---
 
