@@ -26,7 +26,10 @@ from encoder import (
     start_encoder_thread,
     startup_cleanup,
 )
-from scanner import get_scan_status, start_scan
+from scanner import (
+    get_scan_status, start_scan,
+    start_watcher, watch_folder, unwatch_folder, set_watcher_scan_settings,
+)
 
 # ---------------------------------------------------------------------------
 # Config
@@ -137,6 +140,15 @@ def on_startup():
     set_encode_options(OUTPUT_VIDEO_CODEC, VIDEO_QUALITY_CQ, AUDIO_LOSSY_ACTION, AUDIO_LANGUAGES, OUTPUT_CONTAINER,
                        SCALE_HEIGHT, PIX_FMT, ENCODER_SPEED, FORCE_STEREO, AUDIO_NORMALIZE, SUBTITLE_MODE)
     start_encoder_thread(FFMPEG_PATH)
+
+    # Start file watcher and scan all existing folders for changes
+    start_watcher()
+    set_watcher_scan_settings(FFPROBE_PATH, THRESHOLD_KBPS, FLAG_AV1)
+    with db_session() as conn:
+        folders = conn.execute("SELECT id, path FROM folders").fetchall()
+    for folder in folders:
+        watch_folder(folder["id"], folder["path"])
+        start_scan(folder["id"], folder["path"], FFPROBE_PATH, THRESHOLD_KBPS, FLAG_AV1)
 
 
 
@@ -356,6 +368,7 @@ def update_settings(req: UpdateSettingsRequest):
 
     with open(_CONFIG_PATH, "w") as f:
         json.dump(config, f, indent=2)
+    set_watcher_scan_settings(FFPROBE_PATH, THRESHOLD_KBPS, FLAG_AV1)
     return {"ok": True}
 
 
@@ -392,7 +405,8 @@ def add_folder(req: AddFolderRequest):
         folder_id = cur.lastrowid
         conn.commit()
 
-    # Auto-start scan
+    # Start watching and queue initial scan
+    watch_folder(folder_id, path)
     start_scan(folder_id, path, FFPROBE_PATH, THRESHOLD_KBPS, FLAG_AV1)
     return {"id": folder_id, "path": path}
 
@@ -405,6 +419,7 @@ def delete_folder(folder_id: int):
             raise HTTPException(status_code=404, detail="Folder not found")
         conn.execute("DELETE FROM folders WHERE id=?", (folder_id,))
         conn.commit()
+    unwatch_folder(folder_id)
     return {"ok": True}
 
 

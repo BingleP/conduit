@@ -10,6 +10,15 @@ from typing import Optional
 
 from database import db_session
 
+try:
+    from watchdog.observers import Observer as _Observer
+    from watchdog.events import FileSystemEventHandler as _FSEventHandler
+    _WATCHDOG_AVAILABLE = True
+except ImportError:
+    _WATCHDOG_AVAILABLE = False
+    class _FSEventHandler:  # type: ignore[no-redef]
+        pass
+
 
 # ---------------------------------------------------------------------------
 # Scan state (shared across threads)
@@ -396,3 +405,116 @@ def start_scan(folder_id: int, folder_path: str, ffprobe_path: str, threshold_kb
         daemon=True,
     )
     t.start()
+
+
+# ---------------------------------------------------------------------------
+# Folder watcher (watchdog)
+# ---------------------------------------------------------------------------
+
+_watcher_settings: dict = {
+    "ffprobe_path": "ffprobe",
+    "threshold_kbps": 25000,
+    "flag_av1": True,
+}
+_watcher_settings_lock = threading.Lock()
+
+_watcher_observer = None
+_watcher_handlers: dict = {}   # folder_id -> (handler, watch_handle)
+_watcher_lock = threading.Lock()
+
+
+class _DebounceHandler(_FSEventHandler):
+    """Triggers a folder re-scan after a short quiet period following any video file change."""
+
+    DEBOUNCE_S = 3.0
+
+    def __init__(self, folder_id: int, folder_path: str):
+        super().__init__()
+        self.folder_id = folder_id
+        self.folder_path = folder_path
+        self._timer: Optional[threading.Timer] = None
+        self._lock = threading.Lock()
+
+    def _is_video(self, path: str) -> bool:
+        return os.path.splitext(path)[1].lower() in VIDEO_EXTENSIONS
+
+    def on_created(self, event):
+        if not event.is_directory and self._is_video(event.src_path):
+            self._schedule()
+
+    def on_deleted(self, event):
+        if not event.is_directory and self._is_video(event.src_path):
+            self._schedule()
+
+    def on_moved(self, event):
+        if not event.is_directory:
+            if self._is_video(event.src_path) or self._is_video(event.dest_path):
+                self._schedule()
+
+    def _schedule(self):
+        with self._lock:
+            if self._timer:
+                self._timer.cancel()
+            t = threading.Timer(self.DEBOUNCE_S, self._trigger)
+            t.daemon = True
+            t.start()
+            self._timer = t
+
+    def _trigger(self):
+        with _watcher_settings_lock:
+            ffprobe = _watcher_settings["ffprobe_path"]
+            threshold = _watcher_settings["threshold_kbps"]
+            flag_av1 = _watcher_settings["flag_av1"]
+        start_scan(self.folder_id, self.folder_path, ffprobe, threshold, flag_av1)
+
+
+def set_watcher_scan_settings(ffprobe_path: str, threshold_kbps: int, flag_av1: bool):
+    """Update the settings used by auto-triggered re-scans."""
+    with _watcher_settings_lock:
+        _watcher_settings["ffprobe_path"] = ffprobe_path
+        _watcher_settings["threshold_kbps"] = threshold_kbps
+        _watcher_settings["flag_av1"] = flag_av1
+
+
+def start_watcher():
+    """Start the watchdog observer. No-op if watchdog is not installed."""
+    global _watcher_observer
+    if not _WATCHDOG_AVAILABLE:
+        return
+    with _watcher_lock:
+        if _watcher_observer is not None:
+            return
+        _watcher_observer = _Observer()
+        _watcher_observer.start()
+
+
+def watch_folder(folder_id: int, folder_path: str):
+    """Register a folder for live change detection."""
+    if not _WATCHDOG_AVAILABLE or _watcher_observer is None:
+        return
+    if not os.path.isdir(folder_path):
+        return
+    with _watcher_lock:
+        if folder_id in _watcher_handlers:
+            return
+        handler = _DebounceHandler(folder_id, folder_path)
+        try:
+            watch = _watcher_observer.schedule(handler, folder_path, recursive=True)
+        except Exception:
+            return
+        _watcher_handlers[folder_id] = (handler, watch)
+
+
+def unwatch_folder(folder_id: int):
+    """Unregister a folder from live change detection."""
+    if not _WATCHDOG_AVAILABLE or _watcher_observer is None:
+        return
+    with _watcher_lock:
+        entry = _watcher_handlers.pop(folder_id, None)
+        if entry is None:
+            return
+        _, watch = entry
+        try:
+            _watcher_observer.unschedule(watch)
+        except Exception:
+            pass
