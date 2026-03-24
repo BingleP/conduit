@@ -893,21 +893,8 @@ function handleOptimize() {
 
 let _dragCounter = 0;  // track nested dragenter/dragleave events
 
-function _parseUriList(text) {
-  const paths = [];
-  for (const line of text.split(/\r?\n/)) {
-    const uri = line.trim();
-    if (!uri || uri.startsWith('#')) continue;
-    try {
-      const url = new URL(uri);
-      if (url.protocol === 'file:') paths.push(decodeURIComponent(url.pathname));
-    } catch {}
-  }
-  return paths;
-}
-
 function _initDragAndDrop() {
-  // Accept any drag that has items — webkit2gtk may not expose MIME types in dragenter
+  // Show overlay during drag — visual feedback only; path extraction is done natively in Python
   document.addEventListener('dragenter', e => {
     if (!e.dataTransfer) return;
     e.preventDefault();
@@ -915,7 +902,7 @@ function _initDragAndDrop() {
     DOM.dropOverlay.classList.remove('hidden');
   });
 
-  document.addEventListener('dragleave', e => {
+  document.addEventListener('dragleave', () => {
     _dragCounter--;
     if (_dragCounter <= 0) {
       _dragCounter = 0;
@@ -929,64 +916,38 @@ function _initDragAndDrop() {
     e.dataTransfer.dropEffect = 'copy';
   });
 
-  document.addEventListener('drop', async e => {
+  // Prevent the browser from navigating to the dropped file; actual handling is via
+  // window._pyDroppedPaths() called from Python after native DnD interception
+  document.addEventListener('drop', e => {
     e.preventDefault();
     _dragCounter = 0;
     DOM.dropOverlay.classList.add('hidden');
-
-    let paths = [];
-    const dt = e.dataTransfer;
-
-    // Method 1: file.path — Electron-specific, may work in some webkit2gtk builds
-    if (dt?.files?.length) {
-      for (const f of dt.files) {
-        if (f.path) paths.push(f.path);
-      }
-    }
-
-    // Method 2: getData('text/uri-list') — standard, works in some webkit versions
-    if (paths.length === 0) {
-      const uris = dt?.getData('text/uri-list');
-      if (uris) paths = _parseUriList(uris);
-    }
-
-    // Method 3: items[].getAsString() — async callback API, most compatible with webkit2gtk
-    if (paths.length === 0 && dt?.items) {
-      for (const item of dt.items) {
-        if (item.kind === 'string' && item.type === 'text/uri-list') {
-          const uris = await new Promise(r => item.getAsString(r));
-          if (uris) { paths = _parseUriList(uris); break; }
-        }
-      }
-    }
-
-    if (paths.length === 0) {
-      _showDropError('Could not read dropped paths. Try dragging individual files instead of folders, or use Add Folder to add a folder to your library.');
-      return;
-    }
-
-    try {
-      const res = await POST('/api/resolve-drops', { paths });
-      const resolved = res?.files || [];
-      if (resolved.length === 0) {
-        _showDropError('No supported video files found in the dropped items.');
-        return;
-      }
-
-      state._dropResolvedFiles = resolved;
-
-      const n = resolved.length;
-      DOM.dropChoiceCount.textContent = n;
-      DOM.dropChoicePlural.textContent = n !== 1 ? 's' : '';
-      openModal('drop-choice-modal');
-    } catch (err) {
-      _showDropError(`Failed to resolve dropped files: ${err.message}`);
-    }
   });
 }
 
+// Called from desktop.py via evaluate_js after native DnD interception extracts the paths
+window._pyDroppedPaths = async function(paths) {
+  _dragCounter = 0;
+  DOM.dropOverlay.classList.add('hidden');
+  if (!paths?.length) return;
+  try {
+    const res = await POST('/api/resolve-drops', { paths });
+    const resolved = res?.files || [];
+    if (!resolved.length) {
+      _showDropError('No supported video files found in the dropped items.');
+      return;
+    }
+    state._dropResolvedFiles = resolved;
+    const n = resolved.length;
+    DOM.dropChoiceCount.textContent = n;
+    DOM.dropChoicePlural.textContent = n !== 1 ? 's' : '';
+    openModal('drop-choice-modal');
+  } catch (err) {
+    _showDropError(`Failed to resolve dropped files: ${err.message}`);
+  }
+};
+
 function _showDropError(msg) {
-  // Re-use the encode error modal for drop errors
   DOM.encodeErrorFilename.textContent = 'Drag-and-drop';
   DOM.encodeErrorMessage.textContent = msg;
   openModal('encode-error-modal');

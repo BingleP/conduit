@@ -9,11 +9,13 @@ Usage:
     python desktop.py --no-gui  # headless server only (same as running main.py directly)
 """
 
+import json as _json
 import os
 import sys
 import socket
 import threading
 import time
+import urllib.parse as _urlparse
 import urllib.request
 import urllib.error
 
@@ -89,6 +91,167 @@ def _wait_for_server(url: str, timeout: float = 15.0) -> bool:
         except Exception:
             time.sleep(0.2)
     return False
+
+
+# ---------------------------------------------------------------------------
+# Native drag-and-drop interception
+# ---------------------------------------------------------------------------
+
+def _setup_native_dnd(pywebview_window):
+    """Intercept file-manager drops at the native layer and pass paths to JS.
+    Tries the GTK backend first, then Qt. Called from webview.start(func=...)
+    which runs in a background thread after the window is shown."""
+    try:
+        _setup_gtk_dnd(pywebview_window)
+        return
+    except Exception as e:
+        log.debug("GTK DnD not available: %s", e)
+    try:
+        _setup_qt_dnd(pywebview_window)
+        return
+    except Exception as e:
+        log.debug("Qt DnD not available: %s", e)
+    log.warning("No native DnD backend available — drag-and-drop will not work")
+
+
+def _setup_gtk_dnd(pywebview_window):
+    import gi
+    from gi.repository import GLib
+
+    def _on_idle():
+        try:
+            gi.require_version('Gtk', '3.0')
+            gi.require_version('Gdk', '3.0')
+            from gi.repository import Gtk, Gdk, GObject
+
+            toplevels = [w for w in Gtk.Window.list_toplevels() if w.get_visible()]
+            if not toplevels:
+                log.warning("GTK DnD: no visible toplevel windows")
+                return False
+
+            gtk_window = toplevels[0]
+            target = _find_gtk_webview(gtk_window) or gtk_window
+
+            target.drag_dest_set(Gtk.DestDefaults.ALL, [], Gdk.DragAction.COPY)
+            target.drag_dest_add_uri_targets()
+
+            def on_drop(widget, ctx, x, y, sel, info, ts):
+                uris = sel.get_uris() or []
+                paths = [_urlparse.unquote(u[7:]) for u in uris if u.startswith('file://')]
+                if paths:
+                    js = f'window._pyDroppedPaths({_json.dumps(paths)})'
+                    GLib.idle_add(lambda: _eval_js(pywebview_window, js) or False)
+                Gtk.drag_finish(ctx, bool(paths), False, ts)
+                try:
+                    GObject.signal_stop_emission_by_name(widget, 'drag-data-received')
+                except Exception:
+                    pass
+
+            target.connect('drag-data-received', on_drop)
+            log.info("GTK DnD: connected to %s", type(target).__name__)
+        except Exception as e:
+            log.warning("GTK DnD idle error: %s", e)
+        return False
+
+    GLib.idle_add(_on_idle)
+
+
+def _setup_qt_dnd(pywebview_window):
+    try:
+        from PyQt6.QtWidgets import QApplication
+        from PyQt6.QtCore import QObject, QEvent, QTimer
+    except ImportError:
+        from PySide6.QtWidgets import QApplication
+        from PySide6.QtCore import QObject, QEvent, QTimer
+
+    app = QApplication.instance()
+    if app is None:
+        raise RuntimeError("No QApplication instance")
+
+    def _do_setup():
+        try:
+            from PyQt6.QtWidgets import QApplication
+            from PyQt6.QtCore import QObject, QEvent, QTimer
+        except ImportError:
+            from PySide6.QtWidgets import QApplication
+            from PySide6.QtCore import QObject, QEvent, QTimer
+
+        class _DropFilter(QObject):
+            def eventFilter(self, obj, event):
+                t = event.type()
+                if t == QEvent.Type.DragEnter:
+                    if event.mimeData().hasUrls():
+                        event.acceptProposedAction()
+                        return True
+                elif t == QEvent.Type.DragMove:
+                    if event.mimeData().hasUrls():
+                        event.acceptProposedAction()
+                        return True
+                elif t == QEvent.Type.Drop:
+                    urls = event.mimeData().urls()
+                    paths = [u.toLocalFile() for u in urls if u.isLocalFile()]
+                    if paths:
+                        js = f'window._pyDroppedPaths({_json.dumps(paths)})'
+                        QTimer.singleShot(0, lambda: _eval_js(pywebview_window, js))
+                    event.acceptProposedAction()
+                    return True
+                return False
+
+        drop_filter = _DropFilter()
+
+        # Install on QApplication to catch all widgets
+        app.installEventFilter(drop_filter)
+
+        # Also install directly on top-level widgets and their webview children
+        try:
+            from PyQt6.QtWebEngineWidgets import QWebEngineView
+        except ImportError:
+            try:
+                from PySide6.QtWebEngineWidgets import QWebEngineView
+            except ImportError:
+                QWebEngineView = None
+
+        for widget in app.topLevelWidgets():
+            if widget.isVisible():
+                widget.setAcceptDrops(True)
+                if QWebEngineView:
+                    for wv in widget.findChildren(QWebEngineView):
+                        wv.setAcceptDrops(True)
+
+        app._conduit_drop_filter = drop_filter  # prevent GC
+        log.info("Qt DnD: event filter installed")
+
+    QTimer.singleShot(0, _do_setup)
+
+
+def _find_gtk_webview(container):
+    """Recursively find a WebKit2.WebView in a GTK widget tree."""
+    try:
+        import gi
+        for ver in ('4.1', '4.0'):
+            try:
+                gi.require_version('WebKit2', ver)
+                break
+            except Exception:
+                continue
+        from gi.repository import WebKit2
+        if isinstance(container, WebKit2.WebView):
+            return container
+    except Exception:
+        pass
+    if hasattr(container, 'get_children'):
+        for child in container.get_children():
+            result = _find_gtk_webview(child)
+            if result:
+                return result
+    return None
+
+
+def _eval_js(pywebview_window, js):
+    try:
+        pywebview_window.evaluate_js(js)
+    except Exception as e:
+        log.warning("evaluate_js error: %s", e)
 
 
 # ---------------------------------------------------------------------------
@@ -189,7 +352,7 @@ def main():
         window.events.closed += on_closed
 
         log.info("Calling webview.start()")
-        webview.start(debug=False)
+        webview.start(debug=False, func=_setup_native_dnd, args=[window])
         log.info("webview.start() returned")
     except Exception as e:
         log.exception("webview error: %s", e)
