@@ -1,5 +1,7 @@
 import json
 import os
+import re
+import shlex
 import subprocess
 import threading
 import time
@@ -72,7 +74,12 @@ _pix_fmt: str = "auto"              # auto | yuv420p | yuv420p10le
 _encoder_speed: str = "medium"      # fast | medium | slow | veryslow
 _force_stereo: bool = False
 _audio_normalize: bool = False
+_force_encode_audio: bool = False
 _subtitle_mode: str = "copy"        # copy | strip
+_deinterlace: bool = False
+_fps_cap: Optional[int] = None      # None = no cap; e.g. 60, 30, 24
+_autocrop: bool = False
+_denoise: bool = False
 
 # Speed preset maps per encoder
 _SPEED_NVENC    = {"fast": "p2",      "medium": "p4",       "slow": "p6",      "veryslow": "p7"}
@@ -109,10 +116,16 @@ def set_encode_options(
     force_stereo: bool = None,
     audio_normalize: bool = None,
     subtitle_mode: str = None,
+    deinterlace: bool = None,
+    fps_cap: int = None,
+    autocrop: bool = None,
+    denoise: bool = None,
+    force_encode_audio: bool = None,
 ):
     global _output_video_codec, _video_quality_cq, _audio_lossy_action, _audio_languages
     global _output_container, _scale_height, _pix_fmt, _encoder_speed
     global _force_stereo, _audio_normalize, _subtitle_mode
+    global _deinterlace, _fps_cap, _autocrop, _denoise, _force_encode_audio
     with _settings_lock:
         if output_video_codec in ("hevc", "av1", "h264", "vp9"):
             _output_video_codec = output_video_codec
@@ -136,6 +149,16 @@ def set_encode_options(
             _audio_normalize = bool(audio_normalize)
         if subtitle_mode in ("copy", "strip"):
             _subtitle_mode = subtitle_mode
+        if deinterlace is not None:
+            _deinterlace = bool(deinterlace)
+        if fps_cap is not None:
+            _fps_cap = int(fps_cap) if fps_cap > 0 else None
+        if autocrop is not None:
+            _autocrop = bool(autocrop)
+        if denoise is not None:
+            _denoise = bool(denoise)
+        if force_encode_audio is not None:
+            _force_encode_audio = bool(force_encode_audio)
 
 _log_lines: deque = deque(maxlen=2000)
 _log_lock = threading.Lock()
@@ -161,6 +184,7 @@ def get_queue() -> list:
         rows = conn.execute("""
             SELECT j.id, j.file_id, j.status, j.job_type,
                    j.added_at, j.started_at, j.finished_at, j.error_msg,
+                   j.extra_args,
                    f.filename, f.duration_s
             FROM jobs j
             JOIN files f ON f.id = j.file_id
@@ -210,7 +234,8 @@ def _aac_bitrate(channels: int) -> str:
 
 
 def _build_audio_args(audio_tracks: list, languages: list = None, lossy_action: str = "opus",
-                      force_stereo: bool = False, normalize: bool = False):
+                      force_stereo: bool = False, normalize: bool = False,
+                      force_encode_audio: bool = False):
     """
     Select tracks based on configured languages, then encode according to lossy_action.
     Returns (args_list, has_jpn_in_selection).
@@ -241,7 +266,7 @@ def _build_audio_args(audio_tracks: list, languages: list = None, lossy_action: 
 
         args += ["-map", f"0:{stream_index}"]
 
-        copying = lossy_action == "copy" or _is_lossless(codec, profile)
+        copying = lossy_action == "copy" or (_is_lossless(codec, profile) and not force_encode_audio)
 
         if copying:
             args += [f"-c:a:{idx}", "copy"]
@@ -269,11 +294,24 @@ def _build_audio_args(audio_tracks: list, languages: list = None, lossy_action: 
 # ffmpeg command builder
 # ---------------------------------------------------------------------------
 
-def _build_vf_args(hw: str, scale_height: int = None, pix_fmt: str = None) -> list:
-    """Build -vf filter chain and -pix_fmt args for the video stream."""
+def _build_vf_args(hw: str, scale_height: int = None, pix_fmt: str = None,
+                   deinterlace: bool = False, denoise: bool = False,
+                   crop_str: str = None) -> list:
+    """Build -vf filter chain and -pix_fmt args for the video stream.
+
+    Filter order: crop → yadif (deinterlace) → scale → hqdn3d (denoise)
+    → format/hwupload (VA-API only).  All are software filters that run
+    before hwupload, so VA-API stays compatible.
+    """
     filters = []
+    if crop_str:
+        filters.append(f"crop={crop_str}")
+    if deinterlace:
+        filters.append("yadif")
     if scale_height:
         filters.append(f"scale=-2:{scale_height}:flags=lanczos")
+    if denoise:
+        filters.append("hqdn3d")
     if hw == "vaapi":
         if filters:
             filters += ["format=nv12", "hwupload"]
@@ -284,6 +322,31 @@ def _build_vf_args(hw: str, scale_height: int = None, pix_fmt: str = None) -> li
     if pix_fmt and pix_fmt != "auto" and hw != "vaapi":
         result += ["-pix_fmt", pix_fmt]
     return result
+
+
+def _run_cropdetect(input_path: str, ffmpeg_path: str, duration_s: float) -> Optional[str]:
+    """Run cropdetect on the input file and return a crop string like '1920:800:0:140'.
+
+    Seeks into the file (skipping intros/credits) and samples 200 frames.
+    Returns None on any failure so callers can safely skip cropping.
+    """
+    seek = min(duration_s * 0.1, 30.0) if duration_s > 0 else 10.0
+    cmd = [
+        ffmpeg_path,
+        "-ss", str(int(seek)),
+        "-i", input_path,
+        "-vf", "cropdetect=limit=24:round=2:skip=2",
+        "-frames:v", "200",
+        "-f", "null", "-",
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        matches = re.findall(r"crop=(\d+:\d+:\d+:\d+)", result.stderr)
+        if matches:
+            return matches[-1]
+    except Exception:
+        pass
+    return None
 
 
 def _build_video_encode_args(hw: str, codec: str, cq: int, speed: str = "medium") -> list:
@@ -348,21 +411,31 @@ def build_ffmpeg_cmd(file_row, job_type: str, input_path: str, output_path: str,
                      encoder_speed_override: str = None,
                      force_stereo_override=None,
                      audio_normalize_override=None,
-                     subtitle_mode_override: str = None) -> list:
+                     subtitle_mode_override: str = None,
+                     deinterlace_override=None,
+                     fps_cap_override=None,
+                     crop_str: str = None,
+                     denoise_override=None,
+                     force_encode_audio_override=None,
+                     extra_args: str = None) -> list:
     # Resolve effective settings: per-job override > global
     with _settings_lock:
-        eff_hw        = hw_encoder_override                                     or _hw_encoder
-        eff_codec     = output_video_codec_override                             or _output_video_codec
-        eff_cq        = video_quality_cq_override if video_quality_cq_override is not None else _video_quality_cq
-        eff_audio     = audio_lossy_action_override                             or _audio_lossy_action
-        eff_container = output_container_override                               or _output_container
-        eff_scale     = scale_height_override if scale_height_override is not None else _scale_height
-        eff_pix_fmt   = pix_fmt_override                                        or _pix_fmt
-        eff_speed     = encoder_speed_override                                  or _encoder_speed
-        eff_stereo    = force_stereo_override  if force_stereo_override  is not None else _force_stereo
-        eff_normalize = audio_normalize_override if audio_normalize_override is not None else _audio_normalize
-        eff_sub_mode  = subtitle_mode_override                                  or _subtitle_mode
-        eff_vaapi_dev = _vaapi_device
+        eff_hw                = hw_encoder_override                                     or _hw_encoder
+        eff_codec             = output_video_codec_override                             or _output_video_codec
+        eff_cq                = video_quality_cq_override if video_quality_cq_override is not None else _video_quality_cq
+        eff_audio             = audio_lossy_action_override                             or _audio_lossy_action
+        eff_container         = output_container_override                               or _output_container
+        eff_scale             = scale_height_override if scale_height_override is not None else _scale_height
+        eff_pix_fmt           = pix_fmt_override                                        or _pix_fmt
+        eff_speed             = encoder_speed_override                                  or _encoder_speed
+        eff_stereo            = force_stereo_override  if force_stereo_override  is not None else _force_stereo
+        eff_normalize         = audio_normalize_override if audio_normalize_override is not None else _audio_normalize
+        eff_sub_mode          = subtitle_mode_override                                  or _subtitle_mode
+        eff_vaapi_dev         = _vaapi_device
+        eff_deinterlace       = deinterlace_override if deinterlace_override is not None else _deinterlace
+        eff_fps_cap           = fps_cap_override if fps_cap_override is not None else _fps_cap
+        eff_denoise           = denoise_override if denoise_override is not None else _denoise
+        eff_force_enc_audio   = force_encode_audio_override if force_encode_audio_override is not None else _force_encode_audio
 
     # Container-specific audio overrides
     if eff_container == "webm" and eff_audio != "opus":
@@ -384,7 +457,14 @@ def build_ffmpeg_cmd(file_row, job_type: str, input_path: str, output_path: str,
     if job_type == "remux":
         cmd += ["-c:v", "copy"]
     else:
-        cmd += _build_vf_args(eff_hw, eff_scale if eff_scale else None, eff_pix_fmt)
+        cmd += _build_vf_args(
+            eff_hw,
+            eff_scale if eff_scale else None,
+            eff_pix_fmt,
+            deinterlace=eff_deinterlace,
+            denoise=eff_denoise,
+            crop_str=crop_str,
+        )
         cmd += _build_video_encode_args(eff_hw, eff_codec, eff_cq, eff_speed)
 
     # --- Audio ---
@@ -394,6 +474,7 @@ def build_ffmpeg_cmd(file_row, job_type: str, input_path: str, output_path: str,
     audio_args, has_jpn = _build_audio_args(
         audio_tracks, langs, eff_audio,
         force_stereo=eff_stereo, normalize=eff_normalize,
+        force_encode_audio=eff_force_enc_audio,
     )
     cmd += audio_args
 
@@ -426,6 +507,17 @@ def build_ffmpeg_cmd(file_row, job_type: str, input_path: str, output_path: str,
 
     # --- Chapters ---
     cmd += ["-map_chapters", "0"]
+
+    # --- Frame rate cap (encode only) ---
+    if job_type != "remux" and eff_fps_cap:
+        cmd += ["-r", str(int(eff_fps_cap))]
+
+    # --- Extra user-supplied args (inserted before the output path) ---
+    if extra_args and extra_args.strip():
+        try:
+            cmd += shlex.split(extra_args)
+        except ValueError:
+            cmd += extra_args.split()
 
     cmd += [output_path]
     return cmd
@@ -491,6 +583,16 @@ def _run_encode(job_id: int, file_row, ffmpeg_path: str):
         )
         conn.commit()
 
+    # Auto-crop pre-pass: run cropdetect before building the main command
+    crop_str = None
+    if job_type != "remux":
+        with _settings_lock:
+            global_autocrop = _autocrop
+        row_autocrop = file_row["autocrop"]
+        eff_autocrop = bool(row_autocrop) if row_autocrop is not None else global_autocrop
+        if eff_autocrop:
+            crop_str = _run_cropdetect(input_path, ffmpeg_path, duration_s)
+
     cmd = build_ffmpeg_cmd(
         file_row, job_type, input_path, output_path, ffmpeg_path,
         hw_encoder_override=file_row["hw_encoder"],
@@ -504,6 +606,12 @@ def _run_encode(job_id: int, file_row, ffmpeg_path: str):
         force_stereo_override=bool(file_row["force_stereo"]) if file_row["force_stereo"] is not None else None,
         audio_normalize_override=bool(file_row["audio_normalize"]) if file_row["audio_normalize"] is not None else None,
         subtitle_mode_override=file_row["subtitle_mode"],
+        deinterlace_override=bool(file_row["deinterlace"]) if file_row["deinterlace"] is not None else None,
+        fps_cap_override=file_row["fps_cap"],
+        crop_str=crop_str,
+        denoise_override=bool(file_row["denoise"]) if file_row["denoise"] is not None else None,
+        force_encode_audio_override=bool(file_row["force_encode_audio"]) if file_row["force_encode_audio"] is not None else None,
+        extra_args=file_row["extra_args"],
     )
 
     _clear_log()
@@ -581,8 +689,10 @@ def _run_encode(job_id: int, file_row, ffmpeg_path: str):
         else:
             with _log_lock:
                 error_lines = [l for l in list(_log_lines) if l.strip()]
-            tail = error_lines[-3:] if error_lines else []
+            tail = error_lines[-5:] if error_lines else []
             error_msg = f"ffmpeg exited {proc.returncode}" + (": " + " | ".join(tail) if tail else "")
+            if file_row.get("extra_args"):
+                error_msg = f"[Custom args were active — they may have caused this failure]\n{error_msg}"
 
     except Exception as e:
         error_msg = str(e)
@@ -683,6 +793,7 @@ def _encoder_worker(ffmpeg_path: str):
                        j.scale_height, j.pix_fmt, j.encoder_speed,
                        j.force_stereo, j.audio_normalize, j.subtitle_mode,
                        j.output_dir,
+                       j.deinterlace, j.fps_cap, j.autocrop, j.denoise, j.force_encode_audio, j.extra_args,
                        f.path, f.filename, f.duration_s,
                        f.audio_tracks, f.subtitle_tracks
                 FROM jobs j

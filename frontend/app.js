@@ -135,6 +135,12 @@ function initDOM() {
   DOM.ceSubtitleMode        = $('ce-subtitle-mode');
   DOM.ceForceStereo         = $('ce-force-stereo');
   DOM.ceAudioNormalize      = $('ce-audio-normalize');
+  DOM.ceForceEncodeAudio    = $('ce-force-encode-audio');
+  DOM.ceFpsCap              = $('ce-fps-cap');
+  DOM.ceDeinterlace         = $('ce-deinterlace');
+  DOM.ceAutocrop            = $('ce-autocrop');
+  DOM.ceDenoise             = $('ce-denoise');
+  DOM.ceExtraArgs           = $('ce-extra-args');
   DOM.ceOutputDir           = $('ce-output-dir');
   DOM.ceBrowseBtn           = $('ce-browse-btn');
   DOM.ceClearDirBtn         = $('ce-clear-dir-btn');
@@ -173,7 +179,14 @@ function initDOM() {
   DOM.settingsLangAll        = $('settings-lang-all');
   DOM.settingsLangChips      = $('settings-lang-chips');
   DOM.settingsForceStereo    = $('settings-force-stereo');
-  DOM.settingsAudioNormalize = $('settings-audio-normalize');
+  DOM.settingsAudioNormalize    = $('settings-audio-normalize');
+  DOM.settingsForceEncodeAudio  = $('settings-force-encode-audio');
+  DOM.settingsFpsCap         = $('settings-fps-cap');
+  DOM.settingsDeinterlace    = $('settings-deinterlace');
+  DOM.settingsAutocrop       = $('settings-autocrop');
+  DOM.settingsDenoise        = $('settings-denoise');
+  DOM.settingsExtraArgs      = $('settings-extra-args');
+  DOM.settingsPresetLoader   = $('settings-preset-loader');
   DOM.settingsThreshold      = $('settings-threshold');
   DOM.settingsFlagAv1        = $('settings-flag-av1');
   DOM.settingsSaveBtn        = $('settings-save-btn');
@@ -189,6 +202,10 @@ function initDOM() {
 
   DOM.aboutBtn   = $('about-btn');
   DOM.aboutModal = $('about-modal');
+
+  DOM.encodeErrorModal    = $('encode-error-modal');
+  DOM.encodeErrorFilename = $('encode-error-filename');
+  DOM.encodeErrorMessage  = $('encode-error-message');
 
   DOM.flagPopover        = $('flag-popover');
   DOM.flagPopoverContent = $('flag-popover-content');
@@ -240,6 +257,7 @@ const GET    = path       => api('GET',    path);
 const POST   = (path, b)  => api('POST',   path, b);
 const PUT    = (path, b)  => api('PUT',    path, b);
 const DELETE = path       => api('DELETE', path);
+const PATCH  = (path, b)  => api('PATCH',  path, b);
 
 const escHtml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -897,16 +915,42 @@ async function loadPresetsTab() {
     return;
   }
 
+  const HW_OPTIONS = [
+    ['nvenc',    'NVENC'],
+    ['qsv',      'QSV'],
+    ['amf',      'AMF'],
+    ['vaapi',    'VA-API'],
+    ['software', 'Software'],
+  ];
+
   for (const p of presets) {
     const row = document.createElement('div');
     row.className = 'preset-row';
     const meta = [
-      p.hw_encoder?.toUpperCase(),
+      p.builtin ? null : p.hw_encoder?.toUpperCase(),
       p.output_video_codec?.toUpperCase(),
       `CQ ${p.video_quality_cq}`,
       p.audio_lossy_action?.toUpperCase(),
       p.output_container?.toUpperCase(),
     ].filter(Boolean).join(' · ');
+
+    let actionsHtml;
+    if (p.builtin) {
+      const opts = HW_OPTIONS.map(([val, label]) =>
+        `<option value="${val}"${p.hw_encoder === val ? ' selected' : ''}>${label}</option>`
+      ).join('');
+      actionsHtml = `
+        <div class="preset-row-hw">
+          <span class="preset-hw-label">Accelerator</span>
+          <select class="preset-hw-select" data-id="${p.id}">${opts}</select>
+        </div>`;
+    } else {
+      actionsHtml = `
+        <div class="preset-row-actions">
+          <button class="btn-preset-edit" data-id="${p.id}">Edit</button>
+          <button class="btn-preset-delete" data-id="${p.id}">Delete</button>
+        </div>`;
+    }
 
     row.innerHTML = `
       <div class="preset-row-info">
@@ -914,12 +958,13 @@ async function loadPresetsTab() {
         <span class="preset-row-meta">${meta}</span>
         ${p.description ? `<span class="preset-row-desc">${escHtml(p.description)}</span>` : ''}
       </div>
-      <div class="preset-row-actions">
-        ${!p.builtin ? `<button class="btn-preset-edit" data-id="${p.id}">Edit</button><button class="btn-preset-delete" data-id="${p.id}">Delete</button>` : ''}
-      </div>`;
+      ${actionsHtml}`;
     list.appendChild(row);
   }
 
+  list.querySelectorAll('.preset-hw-select').forEach(sel => {
+    sel.addEventListener('change', () => _setBuiltinAccelerator(sel.dataset.id, sel.value));
+  });
   list.querySelectorAll('.btn-preset-edit').forEach(btn => {
     btn.addEventListener('click', () => _openPresetEditor(btn.dataset.id));
   });
@@ -928,6 +973,128 @@ async function loadPresetsTab() {
   });
 }
 
+async function _setBuiltinAccelerator(presetId, hwEncoder) {
+  try {
+    await PATCH(`/api/presets/${presetId}/accelerator`, { hw_encoder: hwEncoder });
+    // Update cache so the preset selector in the encode modal reflects the change immediately
+    if (_presetsCache) {
+      const p = _presetsCache.find(x => x.id === presetId);
+      if (p) p.hw_encoder = hwEncoder;
+    }
+  } catch (e) {
+    alert('Failed to save accelerator preference.');
+  }
+}
+
+// Apply a preset's encode fields into the settings form fields.
+function _settingsApplyPreset(p) {
+  if (!p) return;
+  if (p.hw_encoder) DOM.settingsHwEncoder.value = p.hw_encoder;
+  if (p.output_video_codec) {
+    DOM.settingsOutputCodec.querySelectorAll('input[type="radio"]').forEach(r => {
+      r.checked = r.value === p.output_video_codec;
+    });
+  }
+  if (p.video_quality_cq != null) {
+    DOM.settingsCq.value = p.video_quality_cq;
+    DOM.settingsCqDisplay.textContent = p.video_quality_cq;
+  }
+  if (p.audio_lossy_action)       DOM.settingsAudioAction.value        = p.audio_lossy_action;
+  if (p.output_container)         DOM.settingsOutputContainer.value    = p.output_container;
+  if (p.scale_height != null)     DOM.settingsScaleHeight.value        = String(p.scale_height || 0);
+  if (p.pix_fmt)                  DOM.settingsPixFmt.value             = p.pix_fmt;
+  if (p.encoder_speed)            DOM.settingsEncoderSpeed.value       = p.encoder_speed;
+  if (p.subtitle_mode)            DOM.settingsSubtitleMode.value       = p.subtitle_mode;
+  if (p.force_stereo != null)     DOM.settingsForceStereo.checked      = p.force_stereo;
+  if (p.audio_normalize != null)      DOM.settingsAudioNormalize.checked    = p.audio_normalize;
+  if (p.force_encode_audio != null)   DOM.settingsForceEncodeAudio.checked  = p.force_encode_audio;
+  if (p.fps_cap != null)          DOM.settingsFpsCap.value             = String(p.fps_cap || 0);
+  if (p.deinterlace != null)      DOM.settingsDeinterlace.checked      = p.deinterlace;
+  if (p.autocrop != null)         DOM.settingsAutocrop.checked         = p.autocrop;
+  if (p.denoise != null)          DOM.settingsDenoise.checked          = p.denoise;
+  if (p.extra_args != null)       DOM.settingsExtraArgs.value          = p.extra_args || '';
+  _enforceSettingsConstraints();
+}
+
+// Settings-specific variant: codec is a radio group, not a select.
+function _enforceSettingsConstraints() {
+  const codecRadios = Array.from(DOM.settingsOutputCodec.querySelectorAll('input[type="radio"]'));
+  const containerSel = DOM.settingsOutputContainer;
+  const audioSel = DOM.settingsAudioAction;
+
+  const codec = codecRadios.find(r => r.checked)?.value || 'hevc';
+
+  // --- container options disabled by codec ---
+  containerSel.querySelector('[value="mp4"]').disabled  = (codec === 'vp9');
+  containerSel.querySelector('[value="webm"]').disabled = (codec === 'h264' || codec === 'hevc');
+
+  // Auto-correct container if now invalid
+  if (containerSel.querySelector(`[value="${containerSel.value}"]`).disabled) {
+    containerSel.value = (codec === 'vp9') ? 'webm' : 'mkv';
+  }
+
+  const con = containerSel.value;
+
+  // --- codec radios disabled by container ---
+  const disabledCodecs = con === 'mp4' ? ['vp9'] : con === 'webm' ? ['h264', 'hevc'] : [];
+  codecRadios.forEach(r => {
+    const off = disabledCodecs.includes(r.value);
+    r.disabled = off;
+    r.closest('label').classList.toggle('codec-radio-disabled', off);
+    if (off && r.checked) {
+      const fallback = DOM.settingsOutputCodec.querySelector(`input[value="${con === 'webm' ? 'vp9' : 'hevc'}"]`);
+      if (fallback) fallback.checked = true;
+    }
+  });
+
+  // --- audio constraints by container ---
+  audioSel.querySelector('[value="aac"]').disabled  = (con === 'webm');             // WebM: no AAC
+  audioSel.querySelector('[value="copy"]').disabled = (con === 'webm');             // WebM: no Copy
+  audioSel.querySelector('[value="opus"]').disabled = (con === 'mp4');              // MP4: no Opus
+  if (con === 'webm' && audioSel.value !== 'opus') audioSel.value = 'opus';
+  if (con === 'mp4'  && audioSel.value === 'opus') audioSel.value = 'aac';
+}
+
+// Enforce codec/container/audio compatibility for any set of selects.
+// Disables incompatible options and auto-corrects the selected value when it
+// becomes invalid. Call any time codec or container changes, and on initial open.
+function _enforceCodecContainerAudio(codecSel, containerSel, audioSel) {
+  const codec     = codecSel.value;
+  const container = containerSel.value;
+
+  // --- container options disabled by codec ---
+  containerSel.querySelector('[value="mp4"]').disabled  = (codec === 'vp9');
+  containerSel.querySelector('[value="webm"]').disabled = (codec === 'h264' || codec === 'hevc');
+
+  // Auto-correct container if it's now invalid
+  if (containerSel.querySelector(`[value="${containerSel.value}"]`).disabled) {
+    containerSel.value = (codec === 'vp9') ? 'webm' : 'mkv';
+  }
+
+  // --- codec options disabled by (possibly corrected) container ---
+  const con = containerSel.value;
+  codecSel.querySelector('[value="vp9"]').disabled  = (con === 'mp4');
+  codecSel.querySelector('[value="h264"]').disabled = (con === 'webm');
+  codecSel.querySelector('[value="hevc"]').disabled = (con === 'webm');
+
+  // Auto-correct codec if it's now invalid
+  if (codecSel.querySelector(`[value="${codecSel.value}"]`).disabled) {
+    codecSel.value = (con === 'webm') ? 'vp9' : 'hevc';
+  }
+
+  // --- audio constraints by container ---
+  if (audioSel) {
+    const con = containerSel.value;
+    audioSel.querySelector('[value="aac"]').disabled  = (con === 'webm');           // WebM: no AAC
+    audioSel.querySelector('[value="copy"]').disabled = (con === 'webm');           // WebM: no Copy
+    audioSel.querySelector('[value="opus"]').disabled = (con === 'mp4');            // MP4: no Opus
+    if (con === 'webm' && audioSel.value !== 'opus') audioSel.value = 'opus';
+    if (con === 'mp4'  && audioSel.value === 'opus') audioSel.value = 'aac';
+  }
+}
+
+// ENCODE PARITY — keep in sync with _savePreset payload, _ceApplySettings, and CLAUDE.md
+// field list. Add new encode fields here (both load and reset branches) when added anywhere.
 function _openPresetEditor(presetId = null) {
   const editor = $('preset-editor');
   const title  = $('preset-editor-title');
@@ -937,34 +1104,63 @@ function _openPresetEditor(presetId = null) {
     const p = _presetsCache?.find(x => x.id === presetId);
     if (!p) return;
     title.textContent = 'Edit Preset';
-    $('pe-name').value        = p.name;
-    $('pe-hw-encoder').value  = p.hw_encoder;
-    $('pe-output-codec').value= p.output_video_codec;
-    $('pe-container').value   = p.output_container;
-    $('pe-cq').value          = p.video_quality_cq;
+    $('pe-name').value             = p.name;
+    $('pe-hw-encoder').value       = p.hw_encoder;
+    $('pe-output-codec').value     = p.output_video_codec;
+    $('pe-container').value        = p.output_container;
+    $('pe-cq').value               = p.video_quality_cq;
     $('pe-cq-display').textContent = p.video_quality_cq;
-    $('pe-audio-action').value= p.audio_lossy_action;
+    $('pe-audio-action').value     = p.audio_lossy_action;
+    $('pe-scale-height').value     = String(p.scale_height ?? 0);
+    $('pe-pix-fmt').value          = p.pix_fmt || 'auto';
+    $('pe-encoder-speed').value    = p.encoder_speed || 'medium';
+    $('pe-subtitle-mode').value    = p.subtitle_mode || 'copy';
+    $('pe-fps-cap').value          = String(p.fps_cap ?? 0);
+    $('pe-force-stereo').checked   = !!p.force_stereo;
+    $('pe-audio-normalize').checked    = !!p.audio_normalize;
+    $('pe-force-encode-audio').checked = !!p.force_encode_audio;
+    $('pe-deinterlace').checked    = !!p.deinterlace;
+    $('pe-autocrop').checked       = !!p.autocrop;
+    $('pe-denoise').checked        = !!p.denoise;
+    $('pe-extra-args').value       = p.extra_args || '';
   } else {
     title.textContent = 'New Preset';
-    $('pe-name').value        = '';
-    $('pe-hw-encoder').value  = 'nvenc';
-    $('pe-output-codec').value= 'hevc';
-    $('pe-container').value   = 'mkv';
-    $('pe-cq').value          = 24;
+    $('pe-name').value             = '';
+    $('pe-hw-encoder').value       = 'nvenc';
+    $('pe-output-codec').value     = 'hevc';
+    $('pe-container').value        = 'mkv';
+    $('pe-cq').value               = 24;
     $('pe-cq-display').textContent = '24';
-    $('pe-audio-action').value= 'opus';
+    $('pe-audio-action').value     = 'opus';
+    $('pe-scale-height').value     = '0';
+    $('pe-pix-fmt').value          = 'auto';
+    $('pe-encoder-speed').value    = 'medium';
+    $('pe-subtitle-mode').value    = 'copy';
+    $('pe-fps-cap').value          = '0';
+    $('pe-force-stereo').checked   = false;
+    $('pe-audio-normalize').checked    = false;
+    $('pe-force-encode-audio').checked = false;
+    $('pe-deinterlace').checked    = false;
+    $('pe-autocrop').checked       = false;
+    $('pe-denoise').checked        = false;
+    $('pe-extra-args').value       = '';
   }
 
+  _enforceCodecContainerAudio($('pe-output-codec'), $('pe-container'), $('pe-audio-action'));
   editor.classList.remove('hidden');
   $('pe-name').focus();
 }
 
+// ENCODE PARITY — keep in sync with _openPresetEditor, PresetRequest model (main.py),
+// and CLAUDE.md field list. Add new encode fields to the payload when added anywhere.
 async function _savePreset() {
   const editor = $('preset-editor');
   const editingId = editor.dataset.editingId;
   const name = $('pe-name').value.trim();
   if (!name) { $('pe-name').focus(); return; }
 
+  const peScaleHeight = parseInt($('pe-scale-height').value, 10);
+  const peFpsCap      = parseInt($('pe-fps-cap').value, 10);
   const payload = {
     name,
     hw_encoder:         $('pe-hw-encoder').value,
@@ -972,6 +1168,18 @@ async function _savePreset() {
     video_quality_cq:   parseInt($('pe-cq').value, 10),
     audio_lossy_action: $('pe-audio-action').value,
     output_container:   $('pe-container').value,
+    scale_height:       peScaleHeight || null,
+    pix_fmt:            $('pe-pix-fmt').value,
+    encoder_speed:      $('pe-encoder-speed').value,
+    subtitle_mode:      $('pe-subtitle-mode').value,
+    fps_cap:            peFpsCap || null,
+    force_stereo:       $('pe-force-stereo').checked,
+    audio_normalize:    $('pe-audio-normalize').checked,
+    force_encode_audio: $('pe-force-encode-audio').checked,
+    deinterlace:        $('pe-deinterlace').checked,
+    autocrop:           $('pe-autocrop').checked,
+    denoise:            $('pe-denoise').checked,
+    extra_args:         $('pe-extra-args').value.trim() || null,
   };
 
   try {
@@ -1008,6 +1216,7 @@ async function handleCustomEncode() {
 
   try {
     const s = await GET('/api/settings');
+    // ENCODE PARITY — keep in sync with _ceApplySettings and CLAUDE.md field list.
     _ceApplySettings({
       hw_encoder:         s.hw_encoder         || 'nvenc',
       output_video_codec: s.output_video_codec  || 'hevc',
@@ -1020,6 +1229,12 @@ async function handleCustomEncode() {
       subtitle_mode:      s.subtitle_mode       || 'copy',
       force_stereo:       s.force_stereo        || false,
       audio_normalize:    s.audio_normalize     || false,
+      force_encode_audio: s.force_encode_audio  || false,
+      fps_cap:            s.fps_cap             ?? 0,
+      deinterlace:        s.deinterlace         || false,
+      autocrop:           s.autocrop            || false,
+      denoise:            s.denoise             || false,
+      extra_args:         s.extra_args          || '',
     });
   } catch (_) {}
 
@@ -1042,6 +1257,8 @@ async function handleCustomEncode() {
   openModal('custom-encode-modal');
 }
 
+// ENCODE PARITY — keep in sync with handleCustomEncode fetch block, _openPresetEditor,
+// _savePreset, and CLAUDE.md field list. Add new encode fields here when added anywhere.
 function _ceApplySettings(p) {
   if (p.hw_encoder)         DOM.ceHwEncoder.value       = p.hw_encoder;
   if (p.output_video_codec) DOM.ceOutputCodec.value     = p.output_video_codec;
@@ -1056,7 +1273,14 @@ function _ceApplySettings(p) {
   if (p.encoder_speed)      DOM.ceEncoderSpeed.value    = p.encoder_speed;
   if (p.subtitle_mode)      DOM.ceSubtitleMode.value    = p.subtitle_mode;
   if (p.force_stereo != null)    DOM.ceForceStereo.checked    = p.force_stereo;
-  if (p.audio_normalize != null) DOM.ceAudioNormalize.checked = p.audio_normalize;
+  if (p.audio_normalize != null)     DOM.ceAudioNormalize.checked    = p.audio_normalize;
+  if (p.force_encode_audio != null)  DOM.ceForceEncodeAudio.checked  = p.force_encode_audio;
+  if (p.fps_cap != null)         DOM.ceFpsCap.value           = String(p.fps_cap || 0);
+  if (p.deinterlace != null)     DOM.ceDeinterlace.checked    = p.deinterlace;
+  if (p.autocrop != null)        DOM.ceAutocrop.checked       = p.autocrop;
+  if (p.denoise != null)         DOM.ceDenoise.checked        = p.denoise;
+  if (p.extra_args != null)      DOM.ceExtraArgs.value        = p.extra_args;
+  _enforceCodecContainerAudio(DOM.ceOutputCodec, DOM.ceContainer, DOM.ceAudioAction);
 }
 
 function _ceSetKeepOriginal(keep) {
@@ -1162,6 +1386,12 @@ function _doSubmitCustomEncode(selectedFiles) {
     subtitle_mode:      DOM.ceSubtitleMode.value,
     force_stereo:       DOM.ceForceStereo.checked,
     audio_normalize:    DOM.ceAudioNormalize.checked,
+    force_encode_audio: DOM.ceForceEncodeAudio.checked,
+    fps_cap:            parseInt(DOM.ceFpsCap.value, 10) || 0,
+    deinterlace:        DOM.ceDeinterlace.checked,
+    autocrop:           DOM.ceAutocrop.checked,
+    denoise:            DOM.ceDenoise.checked,
+    extra_args:         DOM.ceExtraArgs.value.trim() || null,
     output_dir:         state._ceOutputDir || null,
   };
 
@@ -1210,6 +1440,11 @@ async function submitJobs(fileIds, jobType, keepOriginal = false, encodeOverride
       if (encodeOverrides.subtitle_mode)           payload.subtitle_mode   = encodeOverrides.subtitle_mode;
       if (encodeOverrides.force_stereo != null)    payload.force_stereo    = encodeOverrides.force_stereo;
       if (encodeOverrides.audio_normalize != null) payload.audio_normalize = encodeOverrides.audio_normalize;
+      if (encodeOverrides.fps_cap != null)         payload.fps_cap         = encodeOverrides.fps_cap;
+      if (encodeOverrides.deinterlace != null)     payload.deinterlace     = encodeOverrides.deinterlace;
+      if (encodeOverrides.autocrop != null)        payload.autocrop        = encodeOverrides.autocrop;
+      if (encodeOverrides.denoise != null)         payload.denoise         = encodeOverrides.denoise;
+      if (encodeOverrides.extra_args)              payload.extra_args      = encodeOverrides.extra_args;
       if (encodeOverrides.output_dir)              payload.output_dir      = encodeOverrides.output_dir;
     }
     await POST('/api/jobs', payload);
@@ -1763,13 +1998,24 @@ function renderHistory() {
 // SSE progress
 // ---------------------------------------------------------------------------
 
+function showEncodeErrorModal(filename, errorMsg) {
+  DOM.encodeErrorFilename.textContent = filename ? `File: ${filename}` : '';
+  DOM.encodeErrorMessage.textContent  = errorMsg || 'Unknown error';
+  openModal('encode-error-modal');
+}
+
 function connectSSE() {
   const es = new EventSource('/api/jobs/progress');
 
   es.addEventListener('progress', e => {
     try {
       const p = JSON.parse(e.data);
+      const prev = state.currentProgress;
       state.currentProgress = p;
+      // Show popup when an encode transitions into error state
+      if (p.status === 'error' && prev?.status === 'running' && p.error_msg) {
+        showEncodeErrorModal(p.filename, p.error_msg);
+      }
       renderProgress(p);
     } catch {}
   });
@@ -1945,7 +2191,13 @@ async function openSettingsModal() {
     _loadLangChips(s.audio_languages);
 
     DOM.settingsForceStereo.checked    = s.force_stereo || false;
-    DOM.settingsAudioNormalize.checked = s.audio_normalize || false;
+    DOM.settingsAudioNormalize.checked    = s.audio_normalize    || false;
+    DOM.settingsForceEncodeAudio.checked  = s.force_encode_audio || false;
+    DOM.settingsFpsCap.value           = s.fps_cap ? String(s.fps_cap) : '0';
+    DOM.settingsDeinterlace.checked    = s.deinterlace || false;
+    DOM.settingsAutocrop.checked       = s.autocrop || false;
+    DOM.settingsDenoise.checked        = s.denoise || false;
+    DOM.settingsExtraArgs.value        = s.extra_args || '';
 
     DOM.settingsThreshold.value = s.needs_optimize_bitrate_threshold_kbps || '';
     state.bitrateThreshold = s.needs_optimize_bitrate_threshold_kbps || 25000;
@@ -1965,6 +2217,18 @@ async function openSettingsModal() {
       password: localStorage.getItem('settings-web-ui-password') || '',
     };
     _updateNetworkFieldVisibility();
+    _enforceSettingsConstraints();
+
+    // Populate preset loader
+    const presets = await _loadPresets(true);
+    DOM.settingsPresetLoader.innerHTML = '<option value="">— select a preset —</option>';
+    for (const p of presets) {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.name + (p.builtin ? ' ★' : '');
+      DOM.settingsPresetLoader.appendChild(opt);
+    }
+    DOM.settingsPresetLoader.value = '';
   } catch (e) {
     DOM.settingsError.textContent = 'Failed to load settings: ' + e.message;
     DOM.settingsError.classList.remove('hidden');
@@ -2028,6 +2292,12 @@ async function saveSettings() {
       audio_languages:     _getSelectedLanguages(),
       force_stereo:        DOM.settingsForceStereo.checked,
       audio_normalize:     DOM.settingsAudioNormalize.checked,
+      force_encode_audio:  DOM.settingsForceEncodeAudio.checked,
+      fps_cap:             parseInt(DOM.settingsFpsCap.value, 10) || 0,
+      deinterlace:         DOM.settingsDeinterlace.checked,
+      autocrop:            DOM.settingsAutocrop.checked,
+      denoise:             DOM.settingsDenoise.checked,
+      extra_args:          DOM.settingsExtraArgs.value.trim() || null,
       needs_optimize_bitrate_threshold_kbps: DOM.settingsThreshold.value ? threshold : null,
       flag_av1:            DOM.settingsFlagAv1.checked,
       web_ui_enabled:      DOM.settingsWebUiEnabled.checked,
@@ -2409,6 +2679,28 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('pe-cancel-btn').addEventListener('click', () => $('preset-editor').classList.add('hidden'));
   $('pe-save-btn').addEventListener('click', _savePreset);
   $('pe-cq').addEventListener('input', () => { $('pe-cq-display').textContent = $('pe-cq').value; });
+
+  // Preset editor — live codec/container/audio constraint enforcement
+  const _peCCA = () => _enforceCodecContainerAudio($('pe-output-codec'), $('pe-container'), $('pe-audio-action'));
+  $('pe-output-codec').addEventListener('change', _peCCA);
+  $('pe-container').addEventListener('change', _peCCA);
+
+  // Encode modal — live codec/container/audio constraint enforcement
+  const _ceCCA = () => _enforceCodecContainerAudio(DOM.ceOutputCodec, DOM.ceContainer, DOM.ceAudioAction);
+  DOM.ceOutputCodec.addEventListener('change', _ceCCA);
+  DOM.ceContainer.addEventListener('change', _ceCCA);
+
+  // Settings — live codec/container/audio constraint enforcement
+  DOM.settingsOutputCodec.addEventListener('change', _enforceSettingsConstraints);
+  DOM.settingsOutputContainer.addEventListener('change', _enforceSettingsConstraints);
+
+  // Settings — preset loader
+  DOM.settingsPresetLoader.addEventListener('change', () => {
+    const id = DOM.settingsPresetLoader.value;
+    if (!id) return;
+    const preset = _presetsCache?.find(p => p.id === id);
+    if (preset) _settingsApplyPreset(preset);
+  });
 
   loadFiltersFromStorage();
 

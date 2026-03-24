@@ -364,17 +364,44 @@
               <option value="strip">Strip all subtitles</option>
             </select>
           </div>
-          <div style="display:flex;gap:20px;margin-bottom:14px">
-            <label class="toggle-switch" style="width:auto;display:flex;align-items:center;gap:8px;cursor:pointer">
-              <input type="checkbox" id="ce-force-stereo">
-              <span class="toggle-track" style="position:static;display:inline-block"><span class="toggle-thumb"></span></span>
-              <span style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase">Stereo Downmix</span>
+          <div class="ce-toggle-group">
+            <label class="ce-toggle-item">
+              <span class="toggle-switch"><input type="checkbox" id="ce-force-stereo"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
+              <span class="ce-toggle-label">Stereo Downmix</span>
             </label>
-            <label class="toggle-switch" style="width:auto;display:flex;align-items:center;gap:8px;cursor:pointer">
-              <input type="checkbox" id="ce-audio-normalize">
-              <span class="toggle-track" style="position:static;display:inline-block"><span class="toggle-thumb"></span></span>
-              <span style="font-size:12px;font-weight:600;color:var(--text-secondary);text-transform:uppercase">Normalize Audio</span>
+            <label class="ce-toggle-item">
+              <span class="toggle-switch"><input type="checkbox" id="ce-audio-normalize"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
+              <span class="ce-toggle-label">Normalize Audio</span>
             </label>
+            <label class="ce-toggle-item">
+              <span class="toggle-switch"><input type="checkbox" id="ce-force-encode-audio"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
+              <span class="ce-toggle-label">Force Encode Audio</span>
+            </label>
+            <label class="ce-toggle-item">
+              <span class="toggle-switch"><input type="checkbox" id="ce-deinterlace"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
+              <span class="ce-toggle-label">Deinterlace</span>
+            </label>
+            <label class="ce-toggle-item">
+              <span class="toggle-switch"><input type="checkbox" id="ce-autocrop"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
+              <span class="ce-toggle-label">Auto-Crop</span>
+            </label>
+            <label class="ce-toggle-item">
+              <span class="toggle-switch"><input type="checkbox" id="ce-denoise"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
+              <span class="ce-toggle-label">Denoise</span>
+            </label>
+          </div>
+          <div class="custom-encode-row" style="margin-bottom:8px">
+            <label class="modal-label">Frame Rate Cap</label>
+            <select id="ce-fps-cap" class="modal-input">
+              <option value="0">Original (no cap)</option>
+              <option value="60">60 fps</option>
+              <option value="30">30 fps</option>
+              <option value="24">24 fps</option>
+            </select>
+          </div>
+          <div class="custom-encode-row" style="margin-bottom:4px">
+            <label class="modal-label">Extra ffmpeg Arguments <span style="font-weight:400;opacity:0.55;text-transform:none;font-size:11px">appended before output path</span></label>
+            <input id="ce-extra-args" type="text" class="modal-input" placeholder="e.g. -metadata title=&quot;My Video&quot; -disposition:s:0 forced" style="font-family:monospace;font-size:12px">
           </div>
         </div>
 
@@ -484,7 +511,7 @@
 
   <!-- Settings Modal -->
   <div id="settings-modal" class="modal-overlay hidden">
-    <div class="modal modal-wide modal-settings">
+    <div class="modal modal-settings">
       <div class="modal-header">
         <span class="modal-title">Settings</span>
         <button class="modal-close" data-modal="settings-modal">&times;</button>
@@ -494,10 +521,20 @@
           <button class="settings-tab active" data-stab="encoder">Encoder</button>
           <button class="settings-tab" data-stab="video">Video</button>
           <button class="settings-tab" data-stab="audio">Audio</button>
+          <button class="settings-tab" data-stab="subtitles">Subtitles</button>
           <button class="settings-tab" data-stab="flagging">Flagging</button>
           <button class="settings-tab" data-stab="network">Network</button>
           <button class="settings-tab" data-stab="presets">Presets</button>
           <button class="settings-tab" data-stab="database" id="settings-tab-database">Database</button>
+        </div>
+
+        <div class="settings-content-area">
+        <div class="settings-preset-bar">
+          <span class="settings-preset-bar-label">Load preset</span>
+          <select id="settings-preset-loader" class="settings-preset-bar-select">
+            <option value="">— select a preset —</option>
+          </select>
+          <span class="settings-preset-bar-hint">Fills the fields below. Click Save to apply.</span>
         </div>
 
         <!-- Encoder tab -->
@@ -527,6 +564,11 @@
             <label class="modal-label">ffprobe Path</label>
             <input id="settings-ffprobe" type="text" class="modal-input" placeholder="ffprobe" />
             <p class="modal-hint">Full path to the ffprobe binary, or just <code>ffprobe</code> if it is on your PATH. Used during folder scans to extract video metadata.</p>
+          </div>
+          <div class="settings-field">
+            <label class="modal-label">Extra ffmpeg Arguments</label>
+            <input id="settings-extra-args" type="text" class="modal-input" placeholder="e.g. -metadata title=&quot;My Video&quot; -map_chapters -1" style="font-family:monospace;font-size:12px" />
+            <p class="modal-hint">Additional ffmpeg arguments appended before the output path on every encode. Applied after all other options. Supports quoted arguments. If a custom argument causes an encode failure, an error popup will indicate that custom args were active. Not applied to remux jobs.</p>
           </div>
         </div>
 
@@ -599,12 +641,41 @@
             <p class="modal-hint">Controls the speed vs. compression efficiency trade-off. Slower presets take more time but produce smaller files at the same quality. Maps to NVENC presets (p2–p7), QSV fast/slow, AMF speed/quality, libx265/libx264 preset names, or VP9 cpu-used value.</p>
           </div>
           <div class="settings-field">
-            <label class="modal-label">Subtitle Mode</label>
-            <select id="settings-subtitle-mode" class="modal-input">
-              <option value="copy">Copy — include subtitle tracks (MKV only, filtered by language)</option>
-              <option value="strip">Strip — remove all subtitle tracks from the output</option>
+            <label class="modal-label">Frame Rate Cap</label>
+            <select id="settings-fps-cap" class="modal-input">
+              <option value="0">Original (no cap)</option>
+              <option value="60">60 fps</option>
+              <option value="30">30 fps</option>
+              <option value="24">24 fps</option>
             </select>
-            <p class="modal-hint">Whether to include subtitle tracks in the encoded output. Copy passes subtitle tracks through filtered by your language selection. Strip removes all subtitles. Note: subtitles are always dropped for MP4 and WebM containers regardless of this setting.</p>
+            <p class="modal-hint">Limit the output frame rate. Useful for reducing file size on high-frame-rate sources, or for Tower Unite which plays 30 fps content well. Not applied to remux jobs.</p>
+          </div>
+          <div class="settings-field">
+            <div class="settings-toggle-row">
+              <div class="settings-toggle-label">
+                <span class="modal-label">Deinterlace</span>
+                <p class="modal-hint">Apply the <code>yadif</code> filter to deinterlace interlaced video sources (e.g. old TV captures, DVD rips). Has no effect on already-progressive content. Not applied to remux jobs.</p>
+              </div>
+              <label class="toggle-switch"><input type="checkbox" id="settings-deinterlace"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+            </div>
+          </div>
+          <div class="settings-field">
+            <div class="settings-toggle-row">
+              <div class="settings-toggle-label">
+                <span class="modal-label">Auto-Crop Black Bars</span>
+                <p class="modal-hint">Automatically detect and crop black bars before encoding using a <code>cropdetect</code> pre-pass. Useful for content with letterboxing or pillarboxing. Adds a brief analysis step per file. Not applied to remux jobs.</p>
+              </div>
+              <label class="toggle-switch"><input type="checkbox" id="settings-autocrop"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+            </div>
+          </div>
+          <div class="settings-field">
+            <div class="settings-toggle-row">
+              <div class="settings-toggle-label">
+                <span class="modal-label">Denoise</span>
+                <p class="modal-hint">Apply the <code>hqdn3d</code> spatial/temporal denoising filter. Useful for noisy sources (old VHS rips, compressed web video). Also helps the encoder achieve better compression. Not applied to remux jobs.</p>
+              </div>
+              <label class="toggle-switch"><input type="checkbox" id="settings-denoise"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+            </div>
           </div>
         </div>
 
@@ -653,6 +724,27 @@
               </div>
               <label class="toggle-switch"><input type="checkbox" id="settings-audio-normalize"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
             </div>
+          </div>
+          <div class="settings-field">
+            <div class="settings-toggle-row">
+              <div class="settings-toggle-label">
+                <span class="modal-label">Force Encode Audio</span>
+                <p class="modal-hint">Always re-encode audio to the selected codec, even if the source track is lossless (FLAC, TrueHD, DTS-HD MA). By default, lossless tracks are copied as-is to preserve quality. Enable this to ensure all audio is encoded to Opus or AAC — useful when targeting a specific format or reducing file size from lossless sources.</p>
+              </div>
+              <label class="toggle-switch"><input type="checkbox" id="settings-force-encode-audio"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Subtitles tab -->
+        <div id="stab-subtitles" class="settings-tab-content">
+          <div class="settings-field">
+            <label class="modal-label">Subtitle Mode</label>
+            <select id="settings-subtitle-mode" class="modal-input">
+              <option value="copy">Copy — include subtitle tracks (MKV only, filtered by language)</option>
+              <option value="strip">Strip — remove all subtitle tracks from the output</option>
+            </select>
+            <p class="modal-hint">Whether to include subtitle tracks in the encoded output. Copy passes subtitle tracks through, filtered by your language selection in the Audio tab. Strip removes all subtitles. Note: subtitles are always dropped for MP4 and WebM containers regardless of this setting.</p>
           </div>
         </div>
 
@@ -725,8 +817,40 @@
                 <div class="custom-encode-row"><label class="modal-label">Codec</label><select id="pe-output-codec" class="modal-input"><option value="hevc">HEVC</option><option value="av1">AV1</option><option value="h264">H.264</option><option value="vp9">VP9</option></select></div>
                 <div class="custom-encode-row"><label class="modal-label">Container</label><select id="pe-container" class="modal-input"><option value="mkv">MKV</option><option value="mp4">MP4</option><option value="webm">WebM</option></select></div>
                 <div class="custom-encode-row"><label class="modal-label">Quality (CQ) <span id="pe-cq-display" style="float:right;color:var(--accent-red)">24</span></label><input id="pe-cq" type="range" class="settings-range" min="0" max="51" value="24"></div>
+                <div class="custom-encode-row"><label class="modal-label">Audio</label><select id="pe-audio-action" class="modal-input"><option value="opus">Opus</option><option value="aac">AAC</option><option value="copy">Copy</option></select></div>
+                <div class="custom-encode-row"><label class="modal-label">Scale Height</label><select id="pe-scale-height" class="modal-input"><option value="0">No Scale</option><option value="2160">4K (2160p)</option><option value="1080">1080p</option><option value="720">720p</option><option value="480">480p</option></select></div>
+                <div class="custom-encode-row"><label class="modal-label">Pixel Format</label><select id="pe-pix-fmt" class="modal-input"><option value="auto">Auto</option><option value="yuv420p">yuv420p (8-bit)</option><option value="yuv420p10le">yuv420p10le (10-bit)</option></select></div>
+                <div class="custom-encode-row"><label class="modal-label">Encoder Speed</label><select id="pe-encoder-speed" class="modal-input"><option value="fast">Fast</option><option value="medium">Medium</option><option value="slow">Slow</option><option value="veryslow">Very Slow</option></select></div>
+                <div class="custom-encode-row"><label class="modal-label">Subtitles</label><select id="pe-subtitle-mode" class="modal-input"><option value="copy">Copy</option><option value="strip">Strip</option></select></div>
+                <div class="custom-encode-row"><label class="modal-label">Frame Rate Cap</label><select id="pe-fps-cap" class="modal-input"><option value="0">No Cap</option><option value="60">60 fps</option><option value="30">30 fps</option><option value="24">24 fps</option></select></div>
               </div>
-              <div class="custom-encode-row"><label class="modal-label">Audio</label><select id="pe-audio-action" class="modal-input"><option value="opus">Opus</option><option value="aac">AAC</option><option value="copy">Copy</option></select></div>
+              <div class="ce-toggle-group">
+                <label class="ce-toggle-item">
+                  <span class="toggle-switch"><input type="checkbox" id="pe-force-stereo"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
+                  <span class="ce-toggle-label">Stereo Downmix</span>
+                </label>
+                <label class="ce-toggle-item">
+                  <span class="toggle-switch"><input type="checkbox" id="pe-audio-normalize"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
+                  <span class="ce-toggle-label">Normalize Audio</span>
+                </label>
+                <label class="ce-toggle-item">
+                  <span class="toggle-switch"><input type="checkbox" id="pe-force-encode-audio"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
+                  <span class="ce-toggle-label">Force Encode Audio</span>
+                </label>
+                <label class="ce-toggle-item">
+                  <span class="toggle-switch"><input type="checkbox" id="pe-deinterlace"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
+                  <span class="ce-toggle-label">Deinterlace</span>
+                </label>
+                <label class="ce-toggle-item">
+                  <span class="toggle-switch"><input type="checkbox" id="pe-autocrop"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
+                  <span class="ce-toggle-label">Auto-Crop Black Bars</span>
+                </label>
+                <label class="ce-toggle-item">
+                  <span class="toggle-switch"><input type="checkbox" id="pe-denoise"><span class="toggle-track"><span class="toggle-thumb"></span></span></span>
+                  <span class="ce-toggle-label">Denoise</span>
+                </label>
+              </div>
+              <div class="custom-encode-row" style="margin-top:8px"><label class="modal-label">Extra ffmpeg Arguments</label><input id="pe-extra-args" type="text" class="modal-input" placeholder="e.g. -metadata title=&quot;My Video&quot;" style="font-family:monospace;font-size:12px"></div>
             </div>
             <div class="preset-editor-actions">
               <button id="pe-cancel-btn" class="btn-cancel">Cancel</button>
@@ -744,6 +868,7 @@
           <p class="modal-hint" style="margin-bottom:12px">Files that have had a completed encode or remux job. Once a file is optimized, Conduit marks it as done and removes it from the optimization queue. Use Re-flag to put a file back in the queue — for example, if you changed your quality settings and want to re-encode it, or if you want to remux a file you previously encoded.</p>
           <div id="db-optimized-list" class="db-optimized-list"></div>
         </div>
+        </div><!-- end settings-content-area -->
       </div>
 
       <div class="settings-feedback">
@@ -768,6 +893,23 @@
       <div id="about-body" class="about-body" style="padding:20px"></div>
       <div class="modal-footer">
         <button class="btn-cancel" data-modal="about-modal">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Encode Error Modal -->
+  <div id="encode-error-modal" class="modal-overlay hidden">
+    <div class="modal modal-encode-error">
+      <div class="modal-header">
+        <span class="modal-title">Encode Failed</span>
+        <button class="modal-close" data-modal="encode-error-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p id="encode-error-filename" class="encode-error-filename"></p>
+        <pre id="encode-error-message" class="encode-error-message"></pre>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-cancel" data-modal="encode-error-modal">Close</button>
       </div>
     </div>
   </div>

@@ -60,6 +60,13 @@ ENCODER_SPEED: str  = CONFIG.get("encoder_speed", "medium")
 FORCE_STEREO: bool  = CONFIG.get("force_stereo", False)
 AUDIO_NORMALIZE: bool = CONFIG.get("audio_normalize", False)
 SUBTITLE_MODE: str  = CONFIG.get("subtitle_mode", "copy")
+DEINTERLACE: bool   = CONFIG.get("deinterlace", False)
+FPS_CAP: Optional[int] = CONFIG.get("fps_cap", None)
+AUTOCROP: bool      = CONFIG.get("autocrop", False)
+DENOISE: bool       = CONFIG.get("denoise", False)
+EXTRA_ARGS: str          = CONFIG.get("extra_args", "")
+FORCE_ENCODE_AUDIO: bool = CONFIG.get("force_encode_audio", False)
+BUILTIN_PRESET_HW_OVERRIDES: dict = CONFIG.get("builtin_preset_hw_overrides", {})
 VAAPI_DEVICE        = CONFIG.get("vaapi_device", "/dev/dri/renderD128")
 WEB_UI_ENABLED      = CONFIG.get("web_ui_enabled", False)
 WEB_UI_HOST         = CONFIG.get("web_ui_host", "0.0.0.0")
@@ -71,6 +78,17 @@ USER_PRESETS: list  = CONFIG.get("user_presets", [])
 # Built-in presets (read-only)
 BUILTIN_PRESETS = [
     {
+        "id": "builtin-default",
+        "name": "Default",
+        "hw_encoder": "nvenc",
+        "output_video_codec": "hevc",
+        "video_quality_cq": 24,
+        "audio_lossy_action": "opus",
+        "output_container": "mkv",
+        "builtin": True,
+        "description": "HEVC + Opus in MKV. Solid all-round preset — great compression, broad compatibility, and lossless-quality Opus audio. Good starting point for most libraries. Switch the accelerator to match your GPU.",
+    },
+    {
         "id": "builtin-tower-unite",
         "name": "Tower Unite",
         "hw_encoder": "software",
@@ -80,6 +98,50 @@ BUILTIN_PRESETS = [
         "output_container": "webm",
         "builtin": True,
         "description": "VP9 + Opus in WebM. Required for synced playback in Tower Unite condos without CEFCodecFix.",
+    },
+    {
+        "id": "builtin-archive-quality",
+        "name": "Archive Quality",
+        "hw_encoder": "software",
+        "output_video_codec": "hevc",
+        "video_quality_cq": 18,
+        "audio_lossy_action": "copy",
+        "output_container": "mkv",
+        "builtin": True,
+        "description": "Highest quality encode for permanent storage. Software libx265 at CQ 18 preserves near-lossless detail. Large files — use when quality matters more than speed or size.",
+    },
+    {
+        "id": "builtin-plex-jellyfin",
+        "name": "Plex / Jellyfin",
+        "hw_encoder": "nvenc",
+        "output_video_codec": "h264",
+        "video_quality_cq": 22,
+        "audio_lossy_action": "aac",
+        "output_container": "mp4",
+        "builtin": True,
+        "description": "H.264 + AAC in MP4 for direct play on virtually every device, TV, and media server without transcoding. Fast hardware encode.",
+    },
+    {
+        "id": "builtin-discord-web",
+        "name": "Discord / Web",
+        "hw_encoder": "nvenc",
+        "output_video_codec": "h264",
+        "video_quality_cq": 28,
+        "audio_lossy_action": "aac",
+        "output_container": "mp4",
+        "builtin": True,
+        "description": "Compact H.264 in MP4 for sharing in Discord, web uploads, or messaging apps. Compatible with everything, fast to encode.",
+    },
+    {
+        "id": "builtin-av1-efficient",
+        "name": "AV1 Efficient",
+        "hw_encoder": "nvenc",
+        "output_video_codec": "av1",
+        "video_quality_cq": 32,
+        "audio_lossy_action": "opus",
+        "output_container": "mkv",
+        "builtin": True,
+        "description": "Hardware AV1 for fast, efficient encodes with excellent compression. Requires RTX 4000+ (NVENC), Intel Arc / 12th gen+ (QSV), or RX 7000+ (AMF) — switch the accelerator to match your GPU.",
     },
 ]
 
@@ -138,7 +200,8 @@ def on_startup():
     set_hw_encoder(HW_ENCODER)
     set_vaapi_device(VAAPI_DEVICE)
     set_encode_options(OUTPUT_VIDEO_CODEC, VIDEO_QUALITY_CQ, AUDIO_LOSSY_ACTION, AUDIO_LANGUAGES, OUTPUT_CONTAINER,
-                       SCALE_HEIGHT, PIX_FMT, ENCODER_SPEED, FORCE_STEREO, AUDIO_NORMALIZE, SUBTITLE_MODE)
+                       SCALE_HEIGHT, PIX_FMT, ENCODER_SPEED, FORCE_STEREO, AUDIO_NORMALIZE, SUBTITLE_MODE,
+                       DEINTERLACE, FPS_CAP, AUTOCROP, DENOISE, FORCE_ENCODE_AUDIO)
     start_encoder_thread(FFMPEG_PATH)
 
     # Start file watcher and scan all existing folders for changes
@@ -176,9 +239,17 @@ class AddJobsRequest(BaseModel):
     force_stereo: Optional[bool] = None
     audio_normalize: Optional[bool] = None
     subtitle_mode: Optional[str] = None         # copy | strip
+    deinterlace: Optional[bool] = None
+    fps_cap: Optional[int] = None               # None | 60 | 30 | 24
+    autocrop: Optional[bool] = None
+    denoise: Optional[bool] = None
+    force_encode_audio: Optional[bool] = None
+    extra_args: Optional[str] = None            # extra ffmpeg args appended before output path
     output_dir: Optional[str] = None            # directory to write output files into
 
 
+# ENCODE PARITY — keep in sync with AddJobsRequest, UpdateSettingsRequest, and CLAUDE.md
+# field list. Add new encode fields here when added anywhere.
 class PresetRequest(BaseModel):
     name: str
     hw_encoder: str = "nvenc"
@@ -186,6 +257,18 @@ class PresetRequest(BaseModel):
     video_quality_cq: int = 24
     audio_lossy_action: str = "opus"
     output_container: str = "mkv"
+    scale_height: Optional[int] = None
+    pix_fmt: str = "auto"
+    encoder_speed: str = "medium"
+    subtitle_mode: str = "copy"
+    force_stereo: bool = False
+    audio_normalize: bool = False
+    fps_cap: Optional[int] = None
+    deinterlace: bool = False
+    autocrop: bool = False
+    denoise: bool = False
+    force_encode_audio: bool = False
+    extra_args: Optional[str] = None
 
 
 class UpdateSettingsRequest(BaseModel):
@@ -205,6 +288,12 @@ class UpdateSettingsRequest(BaseModel):
     force_stereo: Optional[bool] = None
     audio_normalize: Optional[bool] = None
     subtitle_mode: Optional[str] = None       # copy | strip
+    deinterlace: Optional[bool] = None
+    fps_cap: Optional[int] = None             # None | 60 | 30 | 24
+    autocrop: Optional[bool] = None
+    denoise: Optional[bool] = None
+    force_encode_audio: Optional[bool] = None
+    extra_args: Optional[str] = None
     vaapi_device: Optional[str] = None
     web_ui_enabled: Optional[bool] = None
     web_ui_host: Optional[str] = None
@@ -237,6 +326,12 @@ def get_settings():
             "force_stereo": FORCE_STEREO,
             "audio_normalize": AUDIO_NORMALIZE,
             "subtitle_mode": SUBTITLE_MODE,
+            "deinterlace": DEINTERLACE,
+            "fps_cap": FPS_CAP,
+            "autocrop": AUTOCROP,
+            "denoise": DENOISE,
+            "force_encode_audio": FORCE_ENCODE_AUDIO,
+            "extra_args": EXTRA_ARGS,
             "vaapi_device": VAAPI_DEVICE,
             "port": PORT,
             "web_ui_enabled": WEB_UI_ENABLED,
@@ -253,6 +348,7 @@ def update_settings(req: UpdateSettingsRequest):
     global OUTPUT_VIDEO_CODEC, VIDEO_QUALITY_CQ, AUDIO_LOSSY_ACTION, AUDIO_LANGUAGES
     global OUTPUT_CONTAINER, SCALE_HEIGHT, PIX_FMT, ENCODER_SPEED
     global FORCE_STEREO, AUDIO_NORMALIZE, SUBTITLE_MODE
+    global DEINTERLACE, FPS_CAP, AUTOCROP, DENOISE, FORCE_ENCODE_AUDIO, EXTRA_ARGS
     global VAAPI_DEVICE, WEB_UI_ENABLED, WEB_UI_HOST, WEB_UI_PORT
     global WEB_UI_USERNAME, WEB_UI_PASSWORD
     
@@ -338,6 +434,30 @@ def update_settings(req: UpdateSettingsRequest):
             SUBTITLE_MODE = req.subtitle_mode
             config["subtitle_mode"] = req.subtitle_mode
             encode_changed = True
+        if req.deinterlace is not None:
+            DEINTERLACE = req.deinterlace
+            config["deinterlace"] = req.deinterlace
+            encode_changed = True
+        if req.fps_cap is not None:
+            FPS_CAP = int(req.fps_cap) if req.fps_cap > 0 else None
+            config["fps_cap"] = FPS_CAP
+            encode_changed = True
+        if req.autocrop is not None:
+            AUTOCROP = req.autocrop
+            config["autocrop"] = req.autocrop
+            encode_changed = True
+        if req.denoise is not None:
+            DENOISE = req.denoise
+            config["denoise"] = req.denoise
+            encode_changed = True
+        if req.force_encode_audio is not None:
+            FORCE_ENCODE_AUDIO = req.force_encode_audio
+            config["force_encode_audio"] = req.force_encode_audio
+            encode_changed = True
+        if req.extra_args is not None:
+            EXTRA_ARGS = req.extra_args.strip()
+            config["extra_args"] = EXTRA_ARGS
+            encode_changed = True
         if req.vaapi_device is not None:
             VAAPI_DEVICE = req.vaapi_device
             config["vaapi_device"] = req.vaapi_device
@@ -345,7 +465,8 @@ def update_settings(req: UpdateSettingsRequest):
 
         if encode_changed:
             set_encode_options(OUTPUT_VIDEO_CODEC, VIDEO_QUALITY_CQ, AUDIO_LOSSY_ACTION, AUDIO_LANGUAGES, OUTPUT_CONTAINER,
-                               SCALE_HEIGHT, PIX_FMT, ENCODER_SPEED, FORCE_STEREO, AUDIO_NORMALIZE, SUBTITLE_MODE)
+                               SCALE_HEIGHT, PIX_FMT, ENCODER_SPEED, FORCE_STEREO, AUDIO_NORMALIZE, SUBTITLE_MODE,
+                               DEINTERLACE, FPS_CAP, AUTOCROP, DENOISE, FORCE_ENCODE_AUDIO)
 
         if req.web_ui_enabled is not None:
             WEB_UI_ENABLED = req.web_ui_enabled
@@ -604,15 +725,23 @@ def create_jobs(req: AddJobsRequest):
                     audio_lossy_action, output_container,
                     scale_height, pix_fmt, encoder_speed,
                     force_stereo, audio_normalize, subtitle_mode,
+                    deinterlace, fps_cap, autocrop, denoise, force_encode_audio, extra_args,
                     output_dir)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (file_id, req.job_type, 1 if req.keep_original else 0,
                  req.hw_encoder, req.output_video_codec,
                  req.video_quality_cq, req.audio_lossy_action, req.output_container,
                  req.scale_height, req.pix_fmt, req.encoder_speed,
                  1 if req.force_stereo else (0 if req.force_stereo is not None else None),
                  1 if req.audio_normalize else (0 if req.audio_normalize is not None else None),
-                 req.subtitle_mode, req.output_dir),
+                 req.subtitle_mode,
+                 1 if req.deinterlace else (0 if req.deinterlace is not None else None),
+                 req.fps_cap,
+                 1 if req.autocrop else (0 if req.autocrop is not None else None),
+                 1 if req.denoise else (0 if req.denoise is not None else None),
+                 1 if req.force_encode_audio else (0 if req.force_encode_audio is not None else None),
+                 req.extra_args or None,
+                 req.output_dir),
             )
             created.append(cur.lastrowid)
         conn.commit()
@@ -682,7 +811,32 @@ def reflag_file(file_id: int):
 
 @app.get("/api/presets")
 def list_presets():
-    return {"builtin": BUILTIN_PRESETS, "user": USER_PRESETS}
+    builtins = []
+    for p in BUILTIN_PRESETS:
+        merged = dict(p)
+        if p["id"] in BUILTIN_PRESET_HW_OVERRIDES:
+            merged["hw_encoder"] = BUILTIN_PRESET_HW_OVERRIDES[p["id"]]
+        builtins.append(merged)
+    return {"builtin": builtins, "user": USER_PRESETS}
+
+
+class BuiltinAcceleratorRequest(BaseModel):
+    hw_encoder: str
+
+
+@app.patch("/api/presets/{preset_id}/accelerator")
+def set_builtin_accelerator(preset_id: str, req: BuiltinAcceleratorRequest):
+    global BUILTIN_PRESET_HW_OVERRIDES
+    if not any(p["id"] == preset_id for p in BUILTIN_PRESETS):
+        raise HTTPException(status_code=404, detail="Built-in preset not found")
+    if req.hw_encoder not in ("nvenc", "qsv", "amf", "vaapi", "software"):
+        raise HTTPException(status_code=400, detail="Invalid hw_encoder value")
+    BUILTIN_PRESET_HW_OVERRIDES[preset_id] = req.hw_encoder
+    config = load_config()
+    config["builtin_preset_hw_overrides"] = BUILTIN_PRESET_HW_OVERRIDES
+    with open(_CONFIG_PATH, "w") as f:
+        json.dump(config, f, indent=2)
+    return {"ok": True}
 
 
 @app.post("/api/presets", status_code=201)
@@ -696,6 +850,18 @@ def create_preset(req: PresetRequest):
         "video_quality_cq": req.video_quality_cq,
         "audio_lossy_action": req.audio_lossy_action,
         "output_container": req.output_container,
+        "scale_height": req.scale_height,
+        "pix_fmt": req.pix_fmt,
+        "encoder_speed": req.encoder_speed,
+        "subtitle_mode": req.subtitle_mode,
+        "force_stereo": req.force_stereo,
+        "audio_normalize": req.audio_normalize,
+        "fps_cap": req.fps_cap,
+        "deinterlace": req.deinterlace,
+        "autocrop": req.autocrop,
+        "denoise": req.denoise,
+        "force_encode_audio": req.force_encode_audio,
+        "extra_args": req.extra_args or None,
         "builtin": False,
     }
     USER_PRESETS.append(preset)
@@ -714,6 +880,18 @@ def update_preset(preset_id: str, req: PresetRequest):
             p["video_quality_cq"] = req.video_quality_cq
             p["audio_lossy_action"] = req.audio_lossy_action
             p["output_container"] = req.output_container
+            p["scale_height"] = req.scale_height
+            p["pix_fmt"] = req.pix_fmt
+            p["encoder_speed"] = req.encoder_speed
+            p["subtitle_mode"] = req.subtitle_mode
+            p["force_stereo"] = req.force_stereo
+            p["audio_normalize"] = req.audio_normalize
+            p["fps_cap"] = req.fps_cap
+            p["deinterlace"] = req.deinterlace
+            p["autocrop"] = req.autocrop
+            p["denoise"] = req.denoise
+            p["force_encode_audio"] = req.force_encode_audio
+            p["extra_args"] = req.extra_args or None
             _save_config()
             return p
     raise HTTPException(status_code=404, detail="Preset not found")

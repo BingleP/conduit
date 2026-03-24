@@ -100,6 +100,12 @@ def init_db():
             ("audio_normalize",    "INTEGER"),
             ("subtitle_mode",      "TEXT"),
             ("output_dir",         "TEXT"),
+            ("deinterlace",        "INTEGER NOT NULL DEFAULT 0"),
+            ("fps_cap",            "INTEGER"),
+            ("autocrop",           "INTEGER NOT NULL DEFAULT 0"),
+            ("denoise",            "INTEGER NOT NULL DEFAULT 0"),
+            ("force_encode_audio", "INTEGER NOT NULL DEFAULT 0"),
+            ("extra_args",         "TEXT"),
         ]:
             if col not in existing_cols:
                 c.execute(f"ALTER TABLE jobs ADD COLUMN {col} {defn}")
