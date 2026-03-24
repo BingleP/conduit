@@ -293,20 +293,20 @@
             <div class="custom-encode-row">
               <label class="modal-label">Accelerator</label>
               <select id="ce-hw-encoder" class="modal-input">
-                <option value="nvenc">NVENC</option>
-                <option value="qsv">QSV</option>
-                <option value="amf">AMF</option>
-                <option value="vaapi">VA-API</option>
-                <option value="software">Software</option>
+                <option value="nvenc">NVENC — H.264 / HEVC / AV1 (RTX 4000+)</option>
+                <option value="qsv">QSV — H.264 / HEVC / AV1 (12th gen+) / VP9 (10th gen+)</option>
+                <option value="amf">AMF — H.264 / HEVC / AV1 (RX 7000+)</option>
+                <option value="vaapi">VA-API — H.264 / HEVC / AV1 / VP9</option>
+                <option value="software">Software — all codecs</option>
               </select>
             </div>
             <div class="custom-encode-row">
               <label class="modal-label">Codec</label>
               <select id="ce-output-codec" class="modal-input">
-                <option value="hevc">HEVC</option>
-                <option value="av1">AV1</option>
-                <option value="h264">H.264</option>
-                <option value="vp9">VP9</option>
+                <option value="hevc">HEVC — all accelerators</option>
+                <option value="av1">AV1 — RTX 4000+ / 12th gen Intel+ / RX 7000+ / VA-API</option>
+                <option value="h264">H.264 — all accelerators</option>
+                <option value="vp9">VP9 — QSV / VA-API (software on NVENC/AMF) · no MP4</option>
               </select>
             </div>
             <div class="custom-encode-row">
@@ -324,9 +324,9 @@
             <div class="custom-encode-row">
               <label class="modal-label">Container</label>
               <select id="ce-container" class="modal-input">
-                <option value="mkv">MKV</option>
-                <option value="mp4">MP4</option>
-                <option value="webm">WebM</option>
+                <option value="mkv">MKV — all codecs, subtitles, attachments</option>
+                <option value="mp4">MP4 — H.264 / HEVC / AV1 · forces AAC · no subtitles</option>
+                <option value="webm">WebM — VP9 or AV1 only · forces Opus · no subtitles</option>
               </select>
             </div>
             <div class="custom-encode-row">
@@ -505,13 +505,13 @@
           <div class="settings-field">
             <label class="modal-label">Hardware Accelerator</label>
             <select id="settings-hw-encoder" class="modal-input">
-              <option value="nvenc">NVIDIA NVENC — GTX 900 series or newer</option>
-              <option value="qsv">Intel Quick Sync (QSV) — 6th gen Core or newer</option>
-              <option value="amf">AMD AMF — RX 400 series or newer</option>
-              <option value="vaapi">VA-API — Intel / AMD / older GPUs via /dev/dri</option>
-              <option value="software">Software (CPU) — libx265 / libsvtav1 / libx264 / libvpx-vp9</option>
+              <option value="nvenc">NVIDIA NVENC — GTX 900+ · H.264 / HEVC / AV1 (RTX 4000+) · no VP9</option>
+              <option value="qsv">Intel Quick Sync — 6th gen Core+ · H.264 / HEVC / AV1 (12th gen+) / VP9 (10th gen+)</option>
+              <option value="amf">AMD AMF — RX 400+ · H.264 / HEVC / AV1 (RX 7000+) · no VP9</option>
+              <option value="vaapi">VA-API — any GPU via /dev/dri · H.264 / HEVC / AV1 / VP9 on supported hardware</option>
+              <option value="software">Software (CPU) — all codecs · no GPU required · slowest but highest quality</option>
             </select>
-            <p class="modal-hint">GPU backend used for encoding. VA-API works on most Intel and AMD GPUs without vendor-specific drivers. Software encoding works on any machine but is significantly slower. Remux jobs are always CPU-only regardless of this setting.</p>
+            <p class="modal-hint">GPU backend used for encoding. Each accelerator only supports certain codecs — unsupported combinations fall back automatically (VP9 on NVENC/AMF uses libvpx-vp9 in software). AV1 hardware encoding requires newer GPU generations: RTX 4000 series (NVENC), 12th gen Intel / Arc (QSV), RX 7000 series (AMF). VA-API support depends on your specific GPU and driver. Software encoding works on any machine but is significantly slower. Remux jobs are always CPU-only regardless of this setting.</p>
           </div>
           <div class="settings-field">
             <label class="modal-label">VA-API Device Path</label>
@@ -549,7 +549,7 @@
               </label>
               <label class="codec-radio-btn">
                 <input type="radio" name="output_codec" value="vp9">
-                <span class="codec-radio-label"><strong>VP9</strong><span class="codec-radio-sub">Open codec required for Tower Unite and some web platforms. Always software-encoded (libvpx-vp9) regardless of hardware accelerator setting.</span></span>
+                <span class="codec-radio-label"><strong>VP9</strong><span class="codec-radio-sub">Open codec required for Tower Unite and some web platforms. Hardware encoding supported on Intel QSV (Ice Lake / 10th gen+) and VA-API. NVENC and AMF have no VP9 encoder and fall back to software libvpx-vp9 automatically. Not compatible with the MP4 container.</span></span>
               </label>
             </div>
           </div>
@@ -562,11 +562,11 @@
           <div class="settings-field">
             <label class="modal-label">Output Container</label>
             <select id="settings-output-container" class="modal-input">
-              <option value="mkv">MKV (Matroska) — full feature support: all codecs, subtitles, attachments</option>
-              <option value="mp4">MP4 — broad device compatibility, forces AAC audio, no subtitles</option>
-              <option value="webm">WebM — VP9 + Opus only, no subtitles or attachments</option>
+              <option value="mkv">MKV (Matroska) — all codecs, subtitles, attachments · recommended</option>
+              <option value="mp4">MP4 — H.264 / HEVC / AV1 only · forces AAC audio · no subtitles or attachments</option>
+              <option value="webm">WebM — VP9 or AV1 only · forces Opus audio · no subtitles or attachments</option>
             </select>
-            <p class="modal-hint">MKV is recommended for general use. MP4 offers the widest playback compatibility (TVs, phones, media players) but strips subtitles and forces AAC audio. WebM is required for VP9 with Opus audio.</p>
+            <p class="modal-hint">MKV is recommended for general use — it supports every codec, preserves subtitles, and has no audio restrictions. MP4 offers the widest device playback compatibility but strips subtitles, forces AAC audio, and does not support VP9. WebM is required for Tower Unite and web delivery; it only accepts VP9 or AV1 video with Opus audio — H.264 and HEVC are not valid in WebM.</p>
           </div>
           <div class="settings-field">
             <label class="modal-label">Scale / Resolution</label>
