@@ -173,9 +173,11 @@ All settings are accessible from the gear icon in the top-right corner of the ap
 | Encoder Speed | Speed/quality trade-off preset (slow → fast). Faster presets encode quicker at the cost of slightly larger files | `medium` |
 | Subtitle Mode | How to handle subtitle tracks: `copy` (pass through unchanged) or `strip` (remove all subtitles) | `copy` |
 
-**VP9** always uses `libvpx-vp9` regardless of the hardware accelerator setting, as VP9 hardware encoding is not widely supported.
+**VP9 hardware encoding** is supported on Intel QSV (`vp9_qsv`, requires Ice Lake / 10th gen or newer) and VA-API (`vp9_vaapi`). NVIDIA NVENC and AMD AMF do not have VP9 encoders — selecting VP9 with those accelerators silently falls back to software `libvpx-vp9`.
 
-**MP4 container** forces AAC audio (Opus is not compatible with MP4) and strips subtitle and attachment tracks.
+**WebM container** only supports VP9 and AV1 video. H.264 and HEVC are not compatible with WebM — use MKV instead.
+
+**MP4 container** forces AAC audio (Opus is not reliably supported in MP4) and strips subtitle and attachment tracks.
 
 ### Audio
 

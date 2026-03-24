@@ -1120,8 +1120,15 @@ async function _submitCustomEncode() {
 
   DOM.ceError.classList.add('hidden');
 
-  if (DOM.ceOutputCodec.value === 'vp9' && DOM.ceContainer.value === 'mp4') {
-    DOM.ceError.textContent = 'VP9 is not compatible with MP4. Use MKV or WebM.';
+  const ceCodec     = DOM.ceOutputCodec.value;
+  const ceContainer = DOM.ceContainer.value;
+  if (ceCodec === 'vp9' && ceContainer === 'mp4') {
+    DOM.ceError.textContent = 'VP9 is not compatible with the MP4 container. Use MKV or WebM.';
+    DOM.ceError.classList.remove('hidden');
+    return;
+  }
+  if (ceContainer === 'webm' && !['vp9', 'av1'].includes(ceCodec)) {
+    DOM.ceError.textContent = 'WebM only supports VP9 and AV1. Use MKV for H.264 or HEVC.';
     DOM.ceError.classList.remove('hidden');
     return;
   }
@@ -1984,8 +1991,16 @@ async function saveSettings() {
 
   const selectedCodec = DOM.settingsOutputCodec.querySelector('input[type="radio"]:checked');
 
-  if (selectedCodec?.value === 'vp9' && DOM.settingsOutputContainer.value === 'mp4') {
+  const selectedContainer = DOM.settingsOutputContainer.value;
+  const selectedCodecVal  = selectedCodec?.value;
+  if (selectedCodecVal === 'vp9' && selectedContainer === 'mp4') {
     DOM.settingsError.textContent = 'VP9 is not compatible with the MP4 container. Use MKV or WebM.';
+    DOM.settingsError.classList.remove('hidden');
+    DOM.settingsSaveBtn.disabled = false;
+    return;
+  }
+  if (selectedContainer === 'webm' && selectedCodecVal && !['vp9', 'av1'].includes(selectedCodecVal)) {
+    DOM.settingsError.textContent = 'WebM only supports VP9 and AV1. Use MKV for H.264 or HEVC.';
     DOM.settingsError.classList.remove('hidden');
     DOM.settingsSaveBtn.disabled = false;
     return;

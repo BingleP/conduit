@@ -365,6 +365,8 @@ def update_settings(req: UpdateSettingsRequest):
 
     if OUTPUT_VIDEO_CODEC == "vp9" and OUTPUT_CONTAINER == "mp4":
         raise HTTPException(status_code=400, detail="VP9 is not compatible with the MP4 container. Use MKV or WebM.")
+    if OUTPUT_CONTAINER == "webm" and OUTPUT_VIDEO_CODEC not in ("vp9", "av1"):
+        raise HTTPException(status_code=400, detail="WebM only supports VP9 and AV1. Use MKV for H.264 or HEVC.")
 
     with open(_CONFIG_PATH, "w") as f:
         json.dump(config, f, indent=2)
@@ -580,6 +582,8 @@ def create_jobs(req: AddJobsRequest):
     eff_container = req.output_container   or OUTPUT_CONTAINER
     if eff_codec == "vp9" and eff_container == "mp4":
         raise HTTPException(status_code=400, detail="VP9 is not compatible with the MP4 container. Use MKV or WebM.")
+    if eff_container == "webm" and eff_codec not in ("vp9", "av1"):
+        raise HTTPException(status_code=400, detail="WebM only supports VP9 and AV1. Use MKV for H.264 or HEVC.")
 
     created = []
     with db_session() as conn:

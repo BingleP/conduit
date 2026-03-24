@@ -289,34 +289,42 @@ def _build_vf_args(hw: str, scale_height: int = None, pix_fmt: str = None) -> li
 def _build_video_encode_args(hw: str, codec: str, cq: int, speed: str = "medium") -> list:
     """Build ffmpeg video codec arguments (no -vf; call _build_vf_args separately)."""
     cq_s = str(cq)
-    # VP9 is always software-encoded regardless of hw setting
-    if codec == "vp9":
-        cpu  = _SPEED_VP9_CPU.get(speed, "2")
-        dl   = _SPEED_VP9_DL.get(speed, "good")
+
+    def _sw_vp9():
+        cpu = _SPEED_VP9_CPU.get(speed, "2")
+        dl  = _SPEED_VP9_DL.get(speed, "good")
         return ["-c:v", "libvpx-vp9", "-crf", cq_s, "-b:v", "0", "-deadline", dl, "-cpu-used", cpu]
+
     if hw == "nvenc":
+        if codec == "vp9":
+            return _sw_vp9()  # NVENC has no VP9 encoder; fall back to software
         enc     = {"hevc": "hevc_nvenc", "av1": "av1_nvenc", "h264": "h264_nvenc"}.get(codec, "hevc_nvenc")
         profile = (["-profile:v", "main10"] if codec == "hevc"
                    else ["-profile:v", "high"] if codec == "h264" else [])
         preset  = _SPEED_NVENC.get(speed, "p4")
         return ["-c:v", enc] + profile + ["-preset", preset, "-rc", "vbr", "-cq", cq_s, "-b:v", "0"]
     if hw == "qsv":
-        enc     = {"hevc": "hevc_qsv", "av1": "av1_qsv", "h264": "h264_qsv"}.get(codec, "hevc_qsv")
+        enc     = {"hevc": "hevc_qsv", "av1": "av1_qsv", "h264": "h264_qsv", "vp9": "vp9_qsv"}.get(codec, "hevc_qsv")
         profile = (["-profile:v", "main10"] if codec == "hevc"
                    else ["-profile:v", "high"] if codec == "h264" else [])
-        look    = ["-look_ahead", "1"] if codec != "av1" else []
+        # look_ahead is only supported for H.264 and HEVC on QSV
+        look    = ["-look_ahead", "1"] if codec in ("hevc", "h264") else []
         preset  = _SPEED_QSV.get(speed, "medium")
         return ["-c:v", enc] + profile + ["-preset", preset, "-global_quality", cq_s] + look
     if hw == "amf":
+        if codec == "vp9":
+            return _sw_vp9()  # AMF has no VP9 encoder; fall back to software
         enc     = {"hevc": "hevc_amf", "av1": "av1_amf", "h264": "h264_amf"}.get(codec, "hevc_amf")
         profile = (["-profile:v", "main"] if codec == "hevc"
                    else ["-profile:v", "high"] if codec == "h264" else [])
         quality = _SPEED_AMF.get(speed, "balanced")
         return ["-c:v", enc] + profile + ["-quality", quality, "-rc", "cqp", "-qp_i", cq_s, "-qp_p", cq_s]
     if hw == "vaapi":
-        enc = {"hevc": "hevc_vaapi", "av1": "av1_vaapi", "h264": "h264_vaapi"}.get(codec, "hevc_vaapi")
+        enc = {"hevc": "hevc_vaapi", "av1": "av1_vaapi", "h264": "h264_vaapi", "vp9": "vp9_vaapi"}.get(codec, "hevc_vaapi")
         return ["-c:v", enc, "-rc_mode", "CQP", "-qp", cq_s]  # vf handled by _build_vf_args
     if hw == "software":
+        if codec == "vp9":
+            return _sw_vp9()
         sw = _SPEED_SW.get(speed, "medium")
         if codec == "av1":
             return ["-c:v", "libsvtav1", "-crf", cq_s, "-preset", _SPEED_SVT.get(speed, "6")]
