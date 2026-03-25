@@ -122,9 +122,9 @@ BUILTIN_PRESETS = [
         "output_video_codec": "h264",
         "video_quality_cq": 22,
         "audio_lossy_action": "aac",
-        "output_container": "mp4",
+        "output_container": "mkv",
         "builtin": True,
-        "description": "H.264 + AAC in MP4 for direct play on virtually every device, TV, and media server without transcoding. Fast hardware encode.",
+        "description": "H.264 + AAC in MKV for direct play on virtually every device, TV, and media server without transcoding. Fast hardware encode.",
     },
     {
         "id": "builtin-discord-web",
