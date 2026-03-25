@@ -22,40 +22,32 @@ Runs as a desktop app (native window via pywebview) with an optional Web UI for 
 
 ## Requirements
 
-- Linux (Arch, Debian/Ubuntu, Fedora, openSUSE)
+### All platforms
 - Python 3.10+
 - ffmpeg and ffprobe
-- watchdog (installed automatically — enables live folder monitoring)
-- A supported GPU **or** CPU for encoding:
-  - **NVIDIA** — GTX 900 series or newer (NVENC)
-  - **Intel** — 6th gen Core or newer (Quick Sync)
-  - **AMD** — RX 400 series or newer (AMF)
-  - **VA-API** — any GPU with VA-API support (no vendor-specific drivers required)
-  - **Software (CPU)** — no GPU needed; uses libx265 / libsvtav1 / libx264 / libvpx-vp9
+
+### Linux
+- Arch, Debian/Ubuntu, Fedora, or openSUSE (other distros may work)
+- Qt6 WebEngine system packages (installed automatically by `install.sh`)
+
+### Windows
+- Windows 11 (Windows 10 may work but is untested)
+- Microsoft Edge WebView2 Runtime — pre-installed on all Windows 11 machines
+
+### Hardware encoders (all platforms)
+- **NVIDIA** — GTX 900 series or newer (NVENC)
+- **Intel** — 6th gen Core or newer (Quick Sync)
+- **AMD** — RX 400 series or newer (AMF)
+- **VA-API** — any GPU via `/dev/dri` (Linux only)
+- **Software (CPU)** — no GPU required; uses libx265 / libsvtav1 / libx264 / libvpx-vp9
 
 ---
 
 ## Installation
 
-```bash
-git clone https://github.com/BingleP/conduit.git
-cd conduit
-chmod +x install.sh && ./install.sh
-```
+### Linux
 
-The install script will:
-1. Verify Python 3.10+ is available
-2. Install the system webview dependency for your distro (webkit2gtk or Qt)
-3. Create an isolated Python virtual environment in `conduit/venv/`
-4. Install all Python dependencies into the venv
-5. Install a `conduit` launcher to `~/.local/bin/`
-6. Install a desktop entry so Conduit appears in your app menu
-
-No system Python is modified. Everything outside of the webview system package lives in your home directory.
-
-### Installing ffmpeg
-
-Conduit requires `ffmpeg` and `ffprobe`. If they are not already installed:
+**1. Install ffmpeg**
 
 ```bash
 # Arch / CachyOS
@@ -71,37 +63,114 @@ sudo dnf install ffmpeg
 sudo zypper install ffmpeg
 ```
 
----
+**2. Clone and run the installer**
 
-## Usage
+```bash
+git clone https://github.com/BingleP/conduit.git
+cd conduit
+chmod +x install.sh && ./install.sh
+```
 
-### Desktop app
+The install script will:
+1. Verify Python 3.10+ is available
+2. Install the Qt6 WebEngine system package for your distro
+3. Create an isolated Python virtual environment in `conduit/venv/`
+4. Install all Python dependencies into the venv
+5. Install application icons to `~/.local/share/icons/`
+6. Install a `conduit` launcher to `~/.local/bin/`
+7. Install a desktop entry so Conduit appears in your app menu
 
-Launch from your app menu by searching for **Conduit**, or run:
+No system Python is modified. Everything outside of the Qt system package lives in your home directory.
+
+**3. Launch**
+
+Search for **Conduit** in your app menu, or run:
 
 ```bash
 conduit
 ```
 
+---
+
+### Windows
+
+**1. Install Python 3.10+**
+
+Download from [python.org](https://www.python.org/downloads/). During installation, check **"Add Python to PATH"**.
+
+**2. Install ffmpeg**
+
+Download a Windows build from [ffmpeg.org](https://ffmpeg.org/download.html) (the [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) full build is recommended). Extract it and add the `bin` folder to your system PATH.
+
+To verify: open a terminal and run `ffmpeg -version`.
+
+**3. Clone or download the repo**
+
+```
+git clone https://github.com/BingleP/conduit.git
+cd conduit
+```
+
+Or download and extract the ZIP from GitHub.
+
+**4. Run the installer**
+
+Open PowerShell in the conduit directory and run:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\install.ps1
+```
+
+The install script will:
+1. Verify Python 3.10+ is available
+2. Create an isolated Python virtual environment in `conduit\venv\`
+3. Install all Python dependencies into the venv
+4. Create `conduit.bat` — a no-console launcher in the conduit directory
+5. Create a **Start Menu** shortcut with the Conduit icon
+
+**5. Launch**
+
+Search for **Conduit** in the Start Menu, or double-click `conduit.bat`.
+
+---
+
+## Usage
+
+### Desktop app (Linux)
+
+```bash
+conduit
+```
+
+### Desktop app (Windows)
+
+Double-click `conduit.bat` or launch from the Start Menu.
+
 The app opens a native window. All services (server, encoder, scanner) run only while the window is open and stop when you close it.
 
-### Headless mode
+### Headless / server mode
 
 Run Conduit without a window, exposing the Web UI on your network:
 
+**Linux:**
 ```bash
 conduit --no-gui
 ```
 
-The server starts on `127.0.0.1:8000` by default. To access it from other devices, enable the Web UI in **Settings → Network** and restart.
+**Windows:**
+```
+conduit.bat --no-gui
+```
 
-Stop headless mode with `Ctrl+C`, or if running in the background:
+The server starts on `127.0.0.1:8000` by default. To allow access from other devices, enable the Web UI in **Settings → Network** and restart.
 
+**Linux — stop headless mode:**
 ```bash
 pkill -f desktop.py
 ```
 
-### Running as a systemd user service (optional)
+### Running as a systemd user service (Linux only)
 
 If you want Conduit to run automatically in the background when you log in:
 
@@ -161,7 +230,7 @@ A **Load preset** bar sits at the top of the settings panel at all times. Select
 | Setting | Description | Default |
 |---|---|---|
 | Hardware Accelerator | GPU/CPU backend: NVENC (NVIDIA), QSV (Intel), AMF (AMD), VA-API, or Software (CPU) | `nvenc` |
-| VA-API Device Path | Render node path for VA-API encoding (e.g. `/dev/dri/renderD128`) | `/dev/dri/renderD128` |
+| VA-API Device Path | Render node path for VA-API encoding (e.g. `/dev/dri/renderD128`). **Linux only.** | `/dev/dri/renderD128` |
 | ffmpeg Path | Path to ffmpeg binary | `ffmpeg` |
 | ffprobe Path | Path to ffprobe binary | `ffprobe` |
 | Extra ffmpeg Arguments | Additional arguments appended to every ffmpeg encode command before the output path. Supports quoted arguments. Not applied to remux jobs. | _(empty)_ |
@@ -335,10 +404,14 @@ Useful if you want to re-encode files after changing your quality settings or sw
 
 ## Uninstall
 
+### Linux
+
 ```bash
-# Remove launcher and desktop entry
+# Remove launcher, desktop entry, and icons
 rm -f ~/.local/bin/conduit
 rm -f ~/.local/share/applications/conduit.desktop
+rm -rf ~/.local/share/icons/hicolor/*/apps/conduit.png
+rm -f ~/.local/share/icons/hicolor/scalable/apps/conduit.svg
 
 # Remove the app directory (includes venv and database)
 rm -rf /path/to/conduit
@@ -349,8 +422,22 @@ rm -f ~/.config/systemd/user/conduit.service
 systemctl --user daemon-reload
 ```
 
+### Windows
+
+1. Delete the conduit folder
+2. Remove the Start Menu shortcut from `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Conduit.lnk`
+
 ---
 
-## Supported distros
+## Supported platforms
 
-Tested on CachyOS. Should work on any Linux distro with Python 3.10+ and a compatible GPU or CPU. The install script handles package installation for Arch, Debian/Ubuntu, Fedora, and openSUSE. Other distros may require manually installing `python3-gobject` + `webkit2gtk` or `python3-pyqt6` + `qt6-webengine` before running `install.sh`.
+| Platform | Status |
+|---|---|
+| CachyOS / Arch Linux | Tested |
+| Debian / Ubuntu | Supported via install script |
+| Fedora | Supported via install script |
+| openSUSE | Supported via install script |
+| Other Linux distros | Should work — may need Qt6 WebEngine installed manually |
+| Windows 11 | Supported |
+| Windows 10 | Untested |
+| macOS | Not supported |
