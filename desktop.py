@@ -183,6 +183,8 @@ def main():
                 result = webview.windows[0].create_file_dialog(webview.FOLDER_DIALOG)
                 return result[0] if result else None
 
+        _icon_path = os.path.join(_PROJECT_DIR, "frontend", "icons", "conduit-256.png")
+
         window = webview.create_window(
             "Conduit",
             local_url,
@@ -199,6 +201,20 @@ def main():
             server.should_exit = True
 
         window.events.closed += on_closed
+
+        def _on_shown():
+            """Set the Qt application icon once the window is on screen."""
+            try:
+                from PyQt6.QtWidgets import QApplication
+                from PyQt6.QtGui import QIcon
+                app = QApplication.instance()
+                if app and os.path.exists(_icon_path):
+                    app.setWindowIcon(QIcon(_icon_path))
+                    log.info("Window icon set from %s", _icon_path)
+            except Exception as exc:
+                log.warning("Could not set window icon: %s", exc)
+
+        window.events.shown += _on_shown
 
         log.info("Calling webview.start()")
         webview.start(debug=False)

@@ -152,12 +152,28 @@ success "Launcher installed at $LAUNCHER"
 # 6. Install desktop entry
 # -----------------------------------------------------------------------------
 
+info "Installing icons..."
+
+ICON_SRC="$CONDUIT_DIR/frontend/icons"
+for size in 16 22 32 48 64 128 256 512; do
+    ICON_DIR="$HOME/.local/share/icons/hicolor/${size}x${size}/apps"
+    mkdir -p "$ICON_DIR"
+    if [ -f "$ICON_SRC/conduit-${size}.png" ]; then
+        cp "$ICON_SRC/conduit-${size}.png" "$ICON_DIR/conduit.png"
+    fi
+done
+# Also install the SVG into the scalable directory
+mkdir -p "$HOME/.local/share/icons/hicolor/scalable/apps"
+cp "$ICON_SRC/conduit.svg" "$HOME/.local/share/icons/hicolor/scalable/apps/conduit.svg"
+
+if command -v gtk-update-icon-cache &>/dev/null; then
+    gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
+fi
+success "Icons installed."
+
 info "Installing desktop entry..."
 
 mkdir -p "$HOME/.local/share/applications"
-
-ICON_PATH="$CONDUIT_DIR/frontend/icon.png"
-[ ! -f "$ICON_PATH" ] && ICON_PATH="video-display"
 
 cat > "$DESKTOP" <<EOF
 [Desktop Entry]
@@ -166,7 +182,7 @@ Name=Conduit
 Comment=Video library manager and optimizer
 Exec=$LAUNCHER
 Path=$CONDUIT_DIR
-Icon=$ICON_PATH
+Icon=conduit
 Categories=AudioVideo;Video;
 Terminal=false
 StartupWMClass=Conduit

@@ -2600,6 +2600,14 @@ function renderAboutHtml(s) {
     </div>`;
 
   return `
+    <div class="about-logo-header">
+      <img src="icons/conduit.svg" class="about-logo-img" alt="Conduit">
+      <div class="about-logo-text">
+        <div class="about-logo-name">Conduit</div>
+        <div class="about-logo-tagline">Video library manager &amp; optimizer</div>
+      </div>
+    </div>
+
     <div class="about-section">
       <div class="about-section-title">What is Conduit?</div>
       <p class="about-text">Conduit scans your media folders, extracts technical metadata from every video file using <strong>ffprobe</strong>, and surfaces files that would benefit from re-encoding. It then encodes selected files with <strong>ffmpeg</strong> using <strong>${hwName}</strong> (<code>${ffEnc}</code>), replacing originals in-place. The <strong>Encode</strong> button lets you queue any files with custom per-batch settings and a chosen output directory. <strong>Presets</strong> let you save and reuse encode configurations — a built-in <em>Tower Unite</em> preset (VP9/WebM) is included.</p>
