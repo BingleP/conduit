@@ -2595,11 +2595,10 @@ function renderAboutHtml(s) {
 
   const outputDesc = `Encoded to a temporary <code>.new.${container}</code> alongside the original by default. On success the original is deleted and the new file takes its place. If an output directory is set via the Encode modal, the file is written directly to that directory and the original is always kept.`;
 
+  const audioCodecLabel = { aac: 'AAC', opus: 'Opus', ac3: 'AC3', eac3: 'E-AC3', mp3: 'MP3', flac: 'FLAC', pcm: 'PCM' }[audioAct] || audioAct.toUpperCase();
   const audioLossyVal = audioAct === 'copy'
     ? 'All audio tracks are <strong>copied without re-encoding</strong> regardless of codec.'
-    : audioAct === 'aac'
-    ? 'EAC3, AC3, DTS, AAC, and MP3 tracks are re-encoded to <strong>AAC</strong> — 256 kbps for 5.1/7.1, 160 kbps for stereo, 96 kbps for mono.'
-    : 'EAC3, AC3, DTS, AAC, and MP3 tracks are re-encoded to <strong>Opus</strong> — 320 kbps for 5.1/7.1, 192 kbps for stereo, 96 kbps for mono. Smaller than AC3/EAC3 at equivalent or better quality.';
+    : `Lossy audio tracks are re-encoded to <strong>${audioCodecLabel}</strong>.`;
 
   const av1Style  = flagAv1 ? '' : 'opacity:0.45';
   const av1Status = flagAv1 ? '' : ' <em style="color:var(--text-muted)">(currently disabled — AV1 files will not be flagged)</em>';
@@ -2635,7 +2634,7 @@ function renderAboutHtml(s) {
       ${flagRow('flag-reason-hi10p', 'Hi10P',
         '<strong>H.264 10-bit</strong> — Hi10P H.264 lacks broad hardware decode support. Most GPUs fall back to software decode, causing high CPU load during playback.')}
       ${flagRow('flag-reason-av1', 'AV1',
-        `<strong>AV1</strong> — AV1 hardware decode requires newer hardware. Older devices fall back to software decode, causing high CPU load. Re-encoding to a more widely supported codec improves compatibility.${av1Status}`,
+        `<strong>AV1</strong> — AV1 hardware decode requires newer hardware (NVIDIA RTX 30xx+, Intel Arc / 12th gen+, AMD RX 6000+). Older devices fall back to software decode, causing high CPU load. Re-encoding to a more widely supported codec improves compatibility.${av1Status}`,
         av1Style)}
       ${flagRow('flag-reason-bitrate', 'High Bitrate',
         `<strong>Bitrate above ${(threshold / 1000).toFixed(0)} Mbps</strong> — Files that can likely be re-encoded with significant size savings while maintaining the same visual quality.`)}
@@ -2646,11 +2645,11 @@ function renderAboutHtml(s) {
       ${row('Video', `Re-encoded to <strong>${codecName}</strong> at quality <strong>${cq}</strong>${speedDesc}${pixFmtDesc}, ${scaleDesc}. 10-bit content and HDR10 color metadata are preserved.`)}
       ${row('Container', `Output written as <strong>${containerDesc}</strong>. MP4 forces AAC audio and drops subtitles. WebM requires VP9.`)}
       ${row('Audio (lossy)', audioLossyVal)}
-      ${row('Audio (lossless)', 'TrueHD, DTS-HD MA, FLAC, and PCM tracks are <strong>copied without re-encoding</strong> to avoid any quality loss.')}
+      ${row('Audio (lossless)', 'Lossless audio tracks are <strong>copied without re-encoding</strong> to preserve full quality.')}
       ${forceStereo ? row('Force Stereo', 'All audio tracks are <strong>downmixed to stereo (2.0)</strong>.') : ''}
       ${normalize   ? row('Normalization', 'EBU R128 loudness normalization applied — target <strong>−23 LUFS</strong>, true peak <strong>−2 dBTP</strong>.') : ''}
       ${row('Subtitles', subtitleMode === 'strip' ? 'All subtitle tracks are <strong>stripped</strong>.' : 'Subtitle tracks are <strong>copied</strong> (pass-through, filtered by language).')}
-      ${row('Track Selection', `Audio and subtitle tracks are filtered to <strong>${langLabel}</strong>. If no matching track exists, the first available track is kept as a fallback. DVB teletext/subtitle tracks are always dropped.`)}
+      ${row('Track Selection', `Audio and subtitle tracks are filtered to <strong>${langs.length === 0 ? 'all languages' : 'your configured languages'}</strong>. If no matching track exists, the first available is kept as a fallback. DVB teletext/subtitle tracks are always dropped.`)}
       ${row('Output', outputDesc)}
     </div>
 
