@@ -2574,31 +2574,13 @@ function renderAboutHtml(s) {
 
   const hwName    = _ABOUT_HW_NAMES[hw]   || hw.toUpperCase();
   const codecName = _ABOUT_CODEC_NAMES[codec] || codec.toUpperCase();
-  const ffEnc     = (_ABOUT_FFMPEG_ENC[hw] || {})[codec] || `${codec}_${hw}`;
 
   const langLabel = langs.length === 0
-    ? 'all languages'
+    ? 'All languages'
     : langs.map(l => _ABOUT_LANG_NAMES[l] || l.toUpperCase()).join(', ');
 
-  const qualDesc = codec === 'vp9'   ? `CQ ${cq} (libvpx-vp9 — CPU encode regardless of hardware setting)`
-                 : hw === 'nvenc'    ? `VBR CQ ${cq}, preset p4`
-                 : hw === 'qsv'      ? `global_quality ${cq}, look-ahead enabled`
-                 : hw === 'software' ? `CRF ${cq}`
-                 :                     `CQP ${cq}, balanced preset`;
-
-  const scaleDesc    = scaleHeight ? `downscaled to <strong>${scaleHeight}p</strong> (aspect preserved)` : 'original resolution';
-  const pixFmtDesc   = pixFmt !== 'auto' ? `, forced pixel format <code>${pixFmt}</code>` : '';
-  const speedDesc    = `, encoder speed <strong>${encSpeed}</strong>`;
-  const containerDesc = container === 'mp4'  ? 'MP4 (AAC audio, no subtitles)'
-                      : container === 'webm' ? 'WebM'
-                      :                        'MKV';
-
-  const outputDesc = `Encoded to a temporary <code>.new.${container}</code> alongside the original by default. On success the original is deleted and the new file takes its place. If an output directory is set via the Encode modal, the file is written directly to that directory and the original is always kept.`;
-
-  const audioCodecLabel = { aac: 'AAC', opus: 'Opus', ac3: 'AC3', eac3: 'E-AC3', mp3: 'MP3', flac: 'FLAC', pcm: 'PCM' }[audioAct] || audioAct.toUpperCase();
-  const audioLossyVal = audioAct === 'copy'
-    ? 'All audio tracks are <strong>copied without re-encoding</strong> regardless of codec.'
-    : `Lossy audio tracks are re-encoded to <strong>${audioCodecLabel}</strong>.`;
+  const audioCodecLabel = { aac: 'AAC', opus: 'Opus', ac3: 'AC3', eac3: 'E-AC3', mp3: 'MP3', flac: 'FLAC', pcm: 'PCM', copy: 'Copy (passthrough)' }[audioAct] || audioAct.toUpperCase();
+  const containerLabel  = container === 'mp4' ? 'MP4' : container === 'webm' ? 'WebM' : 'MKV';
 
   const av1Style  = flagAv1 ? '' : 'opacity:0.45';
   const av1Status = flagAv1 ? '' : ' <em style="color:var(--text-muted)">(currently disabled — AV1 files will not be flagged)</em>';
@@ -2641,16 +2623,19 @@ function renderAboutHtml(s) {
     </div>
 
     <div class="about-section">
-      <div class="about-section-title">How Optimization Works</div>
-      ${row('Video', `Re-encoded to <strong>${codecName}</strong> at quality <strong>${cq}</strong>${speedDesc}${pixFmtDesc}, ${scaleDesc}. 10-bit content and HDR10 color metadata are preserved.`)}
-      ${row('Container', `Output written as <strong>${containerDesc}</strong>. MP4 forces AAC audio and drops subtitles. WebM requires VP9.`)}
-      ${row('Audio (lossy)', audioLossyVal)}
-      ${row('Audio (lossless)', 'Lossless audio tracks are <strong>copied without re-encoding</strong> to preserve full quality.')}
-      ${forceStereo ? row('Force Stereo', 'All audio tracks are <strong>downmixed to stereo (2.0)</strong>.') : ''}
-      ${normalize   ? row('Normalization', 'EBU R128 loudness normalization applied — target <strong>−23 LUFS</strong>, true peak <strong>−2 dBTP</strong>.') : ''}
-      ${row('Subtitles', subtitleMode === 'strip' ? 'All subtitle tracks are <strong>stripped</strong>.' : 'Subtitle tracks are <strong>copied</strong> (pass-through, filtered by language).')}
-      ${row('Track Selection', `Audio and subtitle tracks are filtered to <strong>${langs.length === 0 ? 'all languages' : 'your configured languages'}</strong>. If no matching track exists, the first available is kept as a fallback. DVB teletext/subtitle tracks are always dropped.`)}
-      ${row('Output', outputDesc)}
+      <div class="about-section-title">Current Optimization Settings</div>
+      ${row('Codec',       `<strong>${codecName}</strong>`)}
+      ${row('Accelerator', `<strong>${hwName}</strong>`)}
+      ${row('Quality',     `<strong>CQ ${cq}</strong>`)}
+      ${row('Speed',       `<strong>${encSpeed.charAt(0).toUpperCase() + encSpeed.slice(1)}</strong>`)}
+      ${row('Container',   `<strong>${containerLabel}</strong>`)}
+      ${row('Audio',       `<strong>${audioCodecLabel}</strong>`)}
+      ${row('Languages',   `<strong>${langLabel}</strong>`)}
+      ${row('Subtitles',   `<strong>${subtitleMode === 'strip' ? 'Strip all' : 'Copy'}</strong>`)}
+      ${row('Scale',       `<strong>${scaleHeight ? scaleHeight + 'p' : 'Original'}</strong>`)}
+      ${row('Pixel Format',`<strong>${pixFmt === 'auto' ? 'Auto' : pixFmt}</strong>`)}
+      ${row('Force Stereo',`<strong>${forceStereo ? 'On' : 'Off'}</strong>`)}
+      ${row('Normalize',   `<strong>${normalize   ? 'On' : 'Off'}</strong>`)}
     </div>
 
     <div class="about-section">
