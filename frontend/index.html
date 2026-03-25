@@ -107,6 +107,14 @@
             <button id="next-page-btn" class="btn-page" disabled title="Next Page">&rsaquo;</button>
           </div>
           <div class="action-btn-group">
+            <button id="browse-btn" class="btn-browse" title="Browse for video files to encode">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+              Browse Files
+            </button>
+            <button id="browse-folder-btn" class="btn-browse" title="Browse a folder and encode its videos">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+              Browse Folder
+            </button>
             <button id="encode-btn" class="btn-encode" disabled>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"></path></svg>
               Encode
@@ -920,23 +928,15 @@
     <div id="flag-popover-content" class="flag-popover-content"></div>
   </div>
 
-  <!-- Drop Overlay -->
-  <div id="drop-overlay" class="drop-overlay hidden">
-    <div class="drop-overlay-inner">
-      <div class="drop-overlay-icon">&#8681;</div>
-      <div class="drop-overlay-label">Drop files or folders to encode</div>
-    </div>
-  </div>
-
-  <!-- Drop Choice Modal -->
+  <!-- Browse Choice Modal -->
   <div id="drop-choice-modal" class="modal-overlay hidden">
     <div class="modal modal-drop-choice">
       <div class="modal-header">
-        <span class="modal-title">Dropped <span id="drop-choice-count">0</span> file<span id="drop-choice-plural"></span></span>
+        <span class="modal-title"><span id="drop-choice-count">0</span> file<span id="drop-choice-plural"></span> selected</span>
         <button class="modal-close" data-modal="drop-choice-modal">&times;</button>
       </div>
       <div class="modal-body drop-choice-body">
-        <p class="drop-choice-hint">What would you like to do with the dropped files?</p>
+        <p class="drop-choice-hint">What would you like to do with the selected files?</p>
         <div class="drop-choice-btns">
           <button id="drop-custom-encode-btn" class="btn-confirm drop-choice-btn">
             <span class="drop-choice-btn-title">Custom Encode</span>

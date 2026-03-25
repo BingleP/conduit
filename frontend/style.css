@@ -2978,50 +2978,7 @@ select.modal-input option:disabled {
 }
 
 /* ============================================================
-   Drop Overlay
-   ============================================================ */
-
-.drop-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 9000;
-  background: rgba(0, 0, 0, 0.6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
-}
-
-.drop-overlay.hidden {
-  display: none;
-}
-
-.drop-overlay-inner {
-  border: 3px dashed var(--accent, #7b61ff);
-  border-radius: 16px;
-  padding: 48px 72px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  background: rgba(0,0,0,0.4);
-}
-
-.drop-overlay-icon {
-  font-size: 52px;
-  line-height: 1;
-  color: var(--accent, #7b61ff);
-}
-
-.drop-overlay-label {
-  font-size: 18px;
-  font-weight: 600;
-  color: #fff;
-  letter-spacing: 0.02em;
-}
-
-/* ============================================================
-   Drop Choice Modal
+   Browse / Drop Choice Modal
    ============================================================ */
 
 .modal-drop-choice {

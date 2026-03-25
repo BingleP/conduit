@@ -9,13 +9,11 @@ Usage:
     python desktop.py --no-gui  # headless server only (same as running main.py directly)
 """
 
-import json as _json
 import os
 import sys
 import socket
 import threading
 import time
-import urllib.parse as _urlparse
 import urllib.request
 import urllib.error
 
@@ -91,79 +89,6 @@ def _wait_for_server(url: str, timeout: float = 15.0) -> bool:
         except Exception:
             time.sleep(0.2)
     return False
-
-
-# ---------------------------------------------------------------------------
-# Native drag-and-drop interception
-# ---------------------------------------------------------------------------
-
-# Paths stored by the Qt event filter on Drop; read by _Api.get_pending_drop_paths()
-_pending_drop_paths: list = []
-
-
-def _install_qt_drop_filter():
-    """Install a passive Qt event filter that records dropped file paths.
-    Must be called from the Qt main thread (e.g. from window.events.shown)."""
-    try:
-        try:
-            from PyQt6.QtWidgets import QApplication, QWidget
-            from PyQt6.QtCore import QObject, QEvent
-            from PyQt6.QtWebEngineWidgets import QWebEngineView
-        except ImportError:
-            from PySide6.QtWidgets import QApplication, QWidget
-            from PySide6.QtCore import QObject, QEvent
-            from PySide6.QtWebEngineWidgets import QWebEngineView
-
-        app = QApplication.instance()
-        if app is None:
-            log.warning("Qt DnD: no QApplication")
-            return
-
-        _DRAG_TYPES = {QEvent.Type.DragEnter, QEvent.Type.DragMove,
-                       QEvent.Type.DragLeave, QEvent.Type.Drop}
-
-        class _DropFilter(QObject):
-            def eventFilter(self, obj, event):
-                t = event.type()
-                if t in _DRAG_TYPES:
-                    log.debug("Qt DnD event: type=%s obj=%s", t.name, type(obj).__name__)
-                if t == QEvent.Type.Drop:
-                    md = event.mimeData()
-                    log.debug("Qt DnD Drop: hasUrls=%s formats=%s", md.hasUrls(), md.formats())
-                    if md.hasUrls():
-                        global _pending_drop_paths
-                        _pending_drop_paths = [
-                            u.toLocalFile() for u in md.urls()
-                            if u.isLocalFile()
-                        ]
-                        log.info("Qt DnD: stored %d paths: %s",
-                                 len(_pending_drop_paths), _pending_drop_paths)
-                return False  # always let the event propagate to Chromium
-
-        filt = _DropFilter()
-        app._conduit_drop_filter = filt  # prevent GC
-
-        # Install on QWebEngineView AND all its QWidget children, since on some
-        # Qt/Wayland configurations the actual drop target is a child rendering widget.
-        installed = 0
-        for top in app.topLevelWidgets():
-            for wv in top.findChildren(QWebEngineView):
-                wv.setAcceptDrops(True)
-                wv.installEventFilter(filt)
-                installed += 1
-                log.info("Qt DnD: filter on WebView %r", wv)
-                for child in wv.findChildren(QWidget):
-                    child.setAcceptDrops(True)
-                    child.installEventFilter(filt)
-                    installed += 1
-                    log.info("Qt DnD: filter on child %s %r", type(child).__name__, child)
-
-        if installed == 0:
-            log.warning("Qt DnD: no QWebEngineView found — filter not installed")
-        else:
-            log.info("Qt DnD: event filter installed on %d widget(s)", installed)
-    except Exception as e:
-        log.warning("Qt DnD setup failed: %s", e)
 
 
 # ---------------------------------------------------------------------------
@@ -246,11 +171,17 @@ def main():
                 result = webview.windows[0].create_file_dialog(webview.FOLDER_DIALOG)
                 return result[0] if result else None
 
-            def get_pending_drop_paths(self):
-                global _pending_drop_paths
-                paths = list(_pending_drop_paths)
-                _pending_drop_paths = []
-                return paths
+            def pick_files(self):
+                """Open a multi-file picker; returns list of selected file paths."""
+                result = webview.windows[0].create_file_dialog(
+                    webview.OPEN_DIALOG, allow_multiple=True
+                )
+                return list(result) if result else []
+
+            def pick_folder_for_encode(self):
+                """Open a folder picker for browse-to-encode; returns the folder path."""
+                result = webview.windows[0].create_file_dialog(webview.FOLDER_DIALOG)
+                return result[0] if result else None
 
         window = webview.create_window(
             "Conduit",
@@ -268,7 +199,6 @@ def main():
             server.should_exit = True
 
         window.events.closed += on_closed
-        window.events.shown += _install_qt_drop_filter
 
         log.info("Calling webview.start()")
         webview.start(debug=False)

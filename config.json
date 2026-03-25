@@ -8,8 +8,22 @@
   "output_video_codec": "hevc",
   "video_quality_cq": 24,
   "audio_lossy_action": "opus",
-  "audio_languages": ["eng", "jpn"],
+  "audio_languages": [
+    "eng",
+    "jpn"
+  ],
   "web_ui_enabled": false,
   "web_ui_host": "0.0.0.0",
-  "web_ui_port": 8000
+  "web_ui_port": 8000,
+  "output_container": "mkv",
+  "scale_height": null,
+  "pix_fmt": "auto",
+  "encoder_speed": "medium",
+  "force_stereo": false,
+  "audio_normalize": false,
+  "subtitle_mode": "copy",
+  "vaapi_device": "/dev/dri/renderD128",
+  "builtin_preset_hw_overrides": {
+    "builtin-tower-unite": "software"
+  }
 }

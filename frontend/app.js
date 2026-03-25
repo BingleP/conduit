@@ -211,12 +211,13 @@ function initDOM() {
   DOM.flagPopover        = $('flag-popover');
   DOM.flagPopoverContent = $('flag-popover-content');
 
-  DOM.dropOverlay        = $('drop-overlay');
   DOM.dropChoiceModal    = $('drop-choice-modal');
   DOM.dropChoiceCount    = $('drop-choice-count');
   DOM.dropChoicePlural   = $('drop-choice-plural');
   DOM.dropCustomEncodeBtn = $('drop-custom-encode-btn');
   DOM.dropOptimizeBtn    = $('drop-optimize-btn');
+  DOM.browseBtn          = $('browse-btn');
+  DOM.browseFolderBtn    = $('browse-folder-btn');
 }
 
 // ---------------------------------------------------------------------------
@@ -891,68 +892,52 @@ function handleOptimize() {
 // Drag-and-drop
 // ---------------------------------------------------------------------------
 
-let _dragCounter = 0;  // track nested dragenter/dragleave events
-
-function _initDragAndDrop() {
-  // Show overlay during drag — visual feedback only; path extraction is done natively in Python
-  document.addEventListener('dragenter', e => {
-    if (!e.dataTransfer) return;
-    e.preventDefault();
-    _dragCounter++;
-    DOM.dropOverlay.classList.remove('hidden');
-  });
-
-  document.addEventListener('dragleave', () => {
-    _dragCounter--;
-    if (_dragCounter <= 0) {
-      _dragCounter = 0;
-      DOM.dropOverlay.classList.add('hidden');
+async function _browseAndResolve(paths) {
+  if (!paths?.length) return;
+  try {
+    const res = await POST('/api/resolve-drops', { paths });
+    const resolved = res?.files || [];
+    if (!resolved.length) {
+      DOM.encodeErrorFilename.textContent = 'Browse';
+      DOM.encodeErrorMessage.textContent = 'No supported video files found in the selected items.';
+      openModal('encode-error-modal');
+      return;
     }
-  });
-
-  document.addEventListener('dragover', e => {
-    if (!e.dataTransfer) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
-  });
-
-  // On drop: ask Python for the paths it captured via the Qt event filter,
-  // then resolve them against the DB and show the choice modal.
-  document.addEventListener('drop', async e => {
-    e.preventDefault();
-    _dragCounter = 0;
-    DOM.dropOverlay.classList.add('hidden');
-
-    let paths = [];
-    try {
-      paths = await window.pywebview.api.get_pending_drop_paths();
-    } catch {
-      return; // not in desktop context
-    }
-    if (!paths?.length) return;
-
-    try {
-      const res = await POST('/api/resolve-drops', { paths });
-      const resolved = res?.files || [];
-      if (!resolved.length) {
-        _showDropError('No supported video files found in the dropped items.');
-        return;
-      }
-      state._dropResolvedFiles = resolved;
-      const n = resolved.length;
-      DOM.dropChoiceCount.textContent = n;
-      DOM.dropChoicePlural.textContent = n !== 1 ? 's' : '';
-      openModal('drop-choice-modal');
-    } catch (err) {
-      _showDropError(`Failed to resolve dropped files: ${err.message}`);
-    }
-  });
+    state._dropResolvedFiles = resolved;
+    const n = resolved.length;
+    DOM.dropChoiceCount.textContent = n;
+    DOM.dropChoicePlural.textContent = n !== 1 ? 's' : '';
+    openModal('drop-choice-modal');
+  } catch (err) {
+    DOM.encodeErrorFilename.textContent = 'Browse';
+    DOM.encodeErrorMessage.textContent = `Failed to resolve selected files: ${err.message}`;
+    openModal('encode-error-modal');
+  }
 }
 
-function _showDropError(msg) {
-  DOM.encodeErrorFilename.textContent = 'Drag-and-drop';
-  DOM.encodeErrorMessage.textContent = msg;
-  openModal('encode-error-modal');
+async function handleBrowse() {
+  if (!window.pywebview?.api) return;
+
+  // Ask user: files or folder?
+  // We open a file dialog first; if nothing selected we try folder.
+  // Use two separate calls surfaced via two buttons in the browse-source modal.
+  // For now: open file picker (multi-select). Folder pick is a separate button.
+  try {
+    const paths = await window.pywebview.api.pick_files();
+    await _browseAndResolve(paths);
+  } catch (e) {
+    // not in desktop context
+  }
+}
+
+async function handleBrowseFolder() {
+  if (!window.pywebview?.api) return;
+  try {
+    const folder = await window.pywebview.api.pick_folder_for_encode();
+    if (folder) await _browseAndResolve([folder]);
+  } catch (e) {
+    // not in desktop context
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -2808,7 +2793,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  _initDragAndDrop();
+  DOM.browseBtn.addEventListener('click', handleBrowse);
+  DOM.browseFolderBtn.addEventListener('click', handleBrowseFolder);
 
   loadFiltersFromStorage();
 
