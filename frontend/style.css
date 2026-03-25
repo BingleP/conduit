@@ -2913,6 +2913,18 @@ select.modal-input option:disabled {
   font-size: 12px;
   color: var(--text-muted);
 }
+.about-logo-credit {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.about-link {
+  color: var(--accent-blue, #4f8ef7);
+  text-decoration: none;
+}
+.about-link:hover {
+  text-decoration: underline;
+}
 
 .about-section {
   display: flex;

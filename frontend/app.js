@@ -2603,6 +2603,7 @@ function renderAboutHtml(s) {
       <div class="about-logo-text">
         <div class="about-logo-name">Conduit</div>
         <div class="about-logo-tagline">Video library manager &amp; optimizer</div>
+        <div class="about-logo-credit">Made by <a href="https://github.com/BingleP" target="_blank" class="about-link">Kerrick Shaw-Vincent</a> &copy; 2026</div>
       </div>
     </div>
 
