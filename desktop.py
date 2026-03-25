@@ -108,9 +108,11 @@ def _install_qt_drop_filter():
         try:
             from PyQt6.QtWidgets import QApplication
             from PyQt6.QtCore import QObject, QEvent
+            from PyQt6.QtWebEngineWidgets import QWebEngineView
         except ImportError:
             from PySide6.QtWidgets import QApplication
             from PySide6.QtCore import QObject, QEvent
+            from PySide6.QtWebEngineWidgets import QWebEngineView
 
         app = QApplication.instance()
         if app is None:
@@ -128,9 +130,23 @@ def _install_qt_drop_filter():
                     log.debug("Qt DnD: stored %d paths", len(_pending_drop_paths))
                 return False  # always let the event propagate to Chromium
 
-        app._conduit_drop_filter = _DropFilter()  # prevent GC
-        app.installEventFilter(app._conduit_drop_filter)
-        log.info("Qt DnD: event filter installed")
+        filt = _DropFilter()
+        app._conduit_drop_filter = filt  # prevent GC
+
+        # QDropEvent is delivered to QWebEngineView, not QApplication.
+        # Find all QWebEngineView instances and install the filter on each.
+        installed = 0
+        for top in app.topLevelWidgets():
+            for wv in top.findChildren(QWebEngineView):
+                wv.setAcceptDrops(True)
+                wv.installEventFilter(filt)
+                installed += 1
+                log.info("Qt DnD: filter installed on QWebEngineView %r", wv)
+
+        if installed == 0:
+            log.warning("Qt DnD: no QWebEngineView found — filter not installed")
+        else:
+            log.info("Qt DnD: event filter installed on %d view(s)", installed)
     except Exception as e:
         log.warning("Qt DnD setup failed: %s", e)
 
