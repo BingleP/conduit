@@ -2723,7 +2723,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   DOM.drawerClose.addEventListener('click', closeFileDetail);
   DOM.optimizeBtn.addEventListener('click', handleOptimize);
-  DOM.encodeBtn.addEventListener('click', handleCustomEncode);
+  DOM.encodeBtn.addEventListener('click', () => handleCustomEncode());
 
   DOM.ceCq.addEventListener('input', () => { DOM.ceCqDisplay.textContent = DOM.ceCq.value; });
   DOM.ceReplaceBtn.addEventListener('click', () => _ceSetKeepOriginal(false));
