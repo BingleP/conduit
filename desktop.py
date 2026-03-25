@@ -203,14 +203,18 @@ def main():
         window.events.closed += on_closed
 
         def _on_shown():
-            """Set the Qt application icon once the window is on screen."""
+            """Set the Qt application icon and desktop file name for Wayland."""
             try:
                 from PyQt6.QtWidgets import QApplication
                 from PyQt6.QtGui import QIcon
                 app = QApplication.instance()
-                if app and os.path.exists(_icon_path):
-                    app.setWindowIcon(QIcon(_icon_path))
-                    log.info("Window icon set from %s", _icon_path)
+                if app:
+                    # Required on Wayland so the compositor matches this window
+                    # to conduit.desktop and uses its icon in the taskbar/switcher.
+                    app.setDesktopFileName("conduit")
+                    if os.path.exists(_icon_path):
+                        app.setWindowIcon(QIcon(_icon_path))
+                    log.info("Window icon and desktop name set")
             except Exception as exc:
                 log.warning("Could not set window icon: %s", exc)
 
