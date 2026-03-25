@@ -2627,7 +2627,7 @@ function renderAboutHtml(s) {
 
     <div class="about-section">
       <div class="about-section-title">What is Conduit?</div>
-      <p class="about-text">Conduit scans your media folders, extracts technical metadata from every video file using <strong>ffprobe</strong>, and surfaces files that would benefit from re-encoding. It then encodes selected files with <strong>ffmpeg</strong> using <strong>${hwName}</strong> (<code>${ffEnc}</code>), replacing originals in-place. The <strong>Encode</strong> button lets you queue any files with custom per-batch settings and a chosen output directory. <strong>Presets</strong> let you save and reuse encode configurations — a built-in <em>Tower Unite</em> preset (VP9/WebM) is included.</p>
+      <p class="about-text">Conduit scans your media folders, extracts technical metadata from every video file using <strong>ffprobe</strong>, and surfaces files that would benefit from re-encoding. Selected files are encoded with <strong>ffmpeg</strong> using your configured hardware accelerator or software encoder, replacing originals in-place. The <strong>Encode</strong> button lets you queue any files with custom per-batch settings and a chosen output directory. <strong>Presets</strong> let you save and reuse encode configurations.</p>
     </div>
 
     <div class="about-section">
@@ -2635,7 +2635,7 @@ function renderAboutHtml(s) {
       ${flagRow('flag-reason-hi10p', 'Hi10P',
         '<strong>H.264 10-bit</strong> — Hi10P H.264 lacks broad hardware decode support. Most GPUs fall back to software decode, causing high CPU load during playback.')}
       ${flagRow('flag-reason-av1', 'AV1',
-        `<strong>AV1</strong> — AV1 hardware decode requires newer hardware (NVIDIA RTX 30xx+, Intel Arc / 12th gen+, AMD RX 6000+). Older hardware falls back to software decode. Re-encoding to ${codecName} gives broader compatibility.${av1Status}`,
+        `<strong>AV1</strong> — AV1 hardware decode requires newer hardware. Older devices fall back to software decode, causing high CPU load. Re-encoding to a more widely supported codec improves compatibility.${av1Status}`,
         av1Style)}
       ${flagRow('flag-reason-bitrate', 'High Bitrate',
         `<strong>Bitrate above ${(threshold / 1000).toFixed(0)} Mbps</strong> — Files that can likely be re-encoded with significant size savings while maintaining the same visual quality.`)}
@@ -2643,14 +2643,14 @@ function renderAboutHtml(s) {
 
     <div class="about-section">
       <div class="about-section-title">How Optimization Works</div>
-      ${row('Video', `Re-encoded to <strong>${codecName}</strong> using <code>${ffEnc}</code> (${hwName}). ${qualDesc}${speedDesc}${pixFmtDesc}, ${scaleDesc}, main10 profile — preserves 10-bit content and HDR10 color metadata.`)}
+      ${row('Video', `Re-encoded to <strong>${codecName}</strong> at quality <strong>${cq}</strong>${speedDesc}${pixFmtDesc}, ${scaleDesc}. 10-bit content and HDR10 color metadata are preserved.`)}
       ${row('Container', `Output written as <strong>${containerDesc}</strong>. MP4 forces AAC audio and drops subtitles. WebM requires VP9.`)}
       ${row('Audio (lossy)', audioLossyVal)}
       ${row('Audio (lossless)', 'TrueHD, DTS-HD MA, FLAC, and PCM tracks are <strong>copied without re-encoding</strong> to avoid any quality loss.')}
       ${forceStereo ? row('Force Stereo', 'All audio tracks are <strong>downmixed to stereo (2.0)</strong>.') : ''}
       ${normalize   ? row('Normalization', 'EBU R128 loudness normalization applied — target <strong>−23 LUFS</strong>, true peak <strong>−2 dBTP</strong>.') : ''}
       ${row('Subtitles', subtitleMode === 'strip' ? 'All subtitle tracks are <strong>stripped</strong>.' : 'Subtitle tracks are <strong>copied</strong> (pass-through, filtered by language).')}
-      ${row('Track Selection', `Keeping <strong>${langLabel}</strong>. If no matching track is found, the first audio track is kept as a fallback. Applies to subtitles too. DVB teletext/subtitle tracks are always dropped.`)}
+      ${row('Track Selection', `Audio and subtitle tracks are filtered to <strong>${langLabel}</strong>. If no matching track exists, the first available track is kept as a fallback. DVB teletext/subtitle tracks are always dropped.`)}
       ${row('Output', outputDesc)}
     </div>
 
