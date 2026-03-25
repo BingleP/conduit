@@ -47,7 +47,9 @@ log.addHandler(_stderr_handler)
 # ---------------------------------------------------------------------------
 
 def _configure_qt_env():
-    """Set environment flags for stable Qt WebEngine rendering under Wayland/X11."""
+    """Set environment flags for Qt WebEngine rendering (Linux/X11/Wayland only)."""
+    if sys.platform == 'win32':
+        return  # pywebview uses Edge WebView2 on Windows — Qt env vars don't apply
     # Prefer Wayland native if available; fall back to xcb (X11)
     if os.environ.get("WAYLAND_DISPLAY") and not os.environ.get("QT_QPA_PLATFORM"):
         os.environ["QT_QPA_PLATFORM"] = "wayland"
@@ -68,6 +70,8 @@ _configure_qt_env()
 # ---------------------------------------------------------------------------
 
 def _has_display() -> bool:
+    if sys.platform == 'win32':
+        return True  # Windows always has a display session
     return bool(
         os.environ.get("DISPLAY")
         or os.environ.get("WAYLAND_DISPLAY")
@@ -183,23 +187,22 @@ def main():
                 result = webview.windows[0].create_file_dialog(webview.FOLDER_DIALOG)
                 return result[0] if result else None
 
-        _icon_path = os.path.join(_PROJECT_DIR, "frontend", "icons", "conduit-256.png")
-
-        # Pre-create the QApplication and set identity BEFORE webview.start()
-        # so the Wayland compositor receives the correct app_id when the XDG
-        # surface is first mapped.  pywebview reuses an existing QApplication
-        # instance, so this takes effect for the whole session.
-        try:
-            from PySide6.QtWidgets import QApplication
-            from PySide6.QtGui import QIcon
-            _qt_app = QApplication.instance() or QApplication(sys.argv)
-            _qt_app.setApplicationName("Conduit")
-            _qt_app.setDesktopFileName("conduit")
-            if os.path.exists(_icon_path):
-                _qt_app.setWindowIcon(QIcon(_icon_path))
-            log.info("Qt app identity set before window creation")
-        except Exception as exc:
-            log.warning("Could not pre-configure Qt app: %s", exc)
+        if sys.platform != 'win32':
+            # Linux: pre-configure Qt/PySide6 identity before webview.start() so
+            # the Wayland compositor gets the correct app_id when the XDG surface
+            # is first mapped.  pywebview reuses an existing QApplication instance.
+            _icon_path = os.path.join(_PROJECT_DIR, "frontend", "icons", "conduit-256.png")
+            try:
+                from PySide6.QtWidgets import QApplication
+                from PySide6.QtGui import QIcon
+                _qt_app = QApplication.instance() or QApplication(sys.argv)
+                _qt_app.setApplicationName("Conduit")
+                _qt_app.setDesktopFileName("conduit")
+                if os.path.exists(_icon_path):
+                    _qt_app.setWindowIcon(QIcon(_icon_path))
+                log.info("Qt app identity set before window creation")
+            except Exception as exc:
+                log.warning("Could not pre-configure Qt app: %s", exc)
 
         window = webview.create_window(
             "Conduit",
@@ -217,6 +220,34 @@ def main():
             server.should_exit = True
 
         window.events.closed += on_closed
+
+        if sys.platform == 'win32':
+            _ico_path = os.path.join(_PROJECT_DIR, "frontend", "icons", "conduit.ico")
+
+            def _on_shown_win32():
+                """Set window/taskbar icon via Win32 API after Edge WebView2 appears."""
+                if not os.path.exists(_ico_path):
+                    return
+                try:
+                    import ctypes
+                    WM_SETICON      = 0x0080
+                    ICON_SMALL      = 0
+                    ICON_BIG        = 1
+                    IMAGE_ICON      = 1
+                    LR_LOADFROMFILE = 0x00000010
+                    LR_DEFAULTSIZE  = 0x00000040
+                    user32 = ctypes.windll.user32
+                    hicon_big   = user32.LoadImageW(None, _ico_path, IMAGE_ICON, 0,  0,  LR_LOADFROMFILE | LR_DEFAULTSIZE)
+                    hicon_small = user32.LoadImageW(None, _ico_path, IMAGE_ICON, 16, 16, LR_LOADFROMFILE)
+                    hwnd = user32.FindWindowW(None, "Conduit")
+                    if hwnd:
+                        user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG,   hicon_big)
+                        user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon_small)
+                        log.info("Windows icon applied via Win32 API")
+                except Exception as exc:
+                    log.warning("Could not set Windows icon: %s", exc)
+
+            window.events.shown += _on_shown_win32
 
         log.info("Calling webview.start()")
         webview.start(debug=False)

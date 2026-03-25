@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import sys
 import threading
 import time
 import traceback
@@ -345,6 +346,7 @@ def get_settings():
             "force_encode_audio": FORCE_ENCODE_AUDIO,
             "extra_args": EXTRA_ARGS,
             "vaapi_device": VAAPI_DEVICE,
+            "platform": sys.platform,
             "port": PORT,
             "web_ui_enabled": WEB_UI_ENABLED,
             "web_ui_host": WEB_UI_HOST,
@@ -385,7 +387,8 @@ def update_settings(req: UpdateSettingsRequest):
         if req.needs_optimize_bitrate_threshold_kbps is not None:
             THRESHOLD_KBPS = req.needs_optimize_bitrate_threshold_kbps
             config["needs_optimize_bitrate_threshold_kbps"] = req.needs_optimize_bitrate_threshold_kbps
-        if req.hw_encoder is not None and req.hw_encoder in ("nvenc", "qsv", "amf", "vaapi", "software"):
+        _valid_hw = {"nvenc", "qsv", "amf", "software"} if sys.platform == "win32" else {"nvenc", "qsv", "amf", "vaapi", "software"}
+        if req.hw_encoder is not None and req.hw_encoder in _valid_hw:
             HW_ENCODER = req.hw_encoder
             config["hw_encoder"] = req.hw_encoder
             set_hw_encoder(req.hw_encoder)
@@ -855,7 +858,8 @@ def set_builtin_accelerator(preset_id: str, req: BuiltinAcceleratorRequest):
     global BUILTIN_PRESET_HW_OVERRIDES
     if not any(p["id"] == preset_id for p in BUILTIN_PRESETS):
         raise HTTPException(status_code=404, detail="Built-in preset not found")
-    if req.hw_encoder not in ("nvenc", "qsv", "amf", "vaapi", "software"):
+    _valid_hw = {"nvenc", "qsv", "amf", "software"} if sys.platform == "win32" else {"nvenc", "qsv", "amf", "vaapi", "software"}
+    if req.hw_encoder not in _valid_hw:
         raise HTTPException(status_code=400, detail="Invalid hw_encoder value")
     BUILTIN_PRESET_HW_OVERRIDES[preset_id] = req.hw_encoder
     config = load_config()

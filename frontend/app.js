@@ -1116,6 +1116,22 @@ function _enforceSettingsConstraints() {
   if (con === 'mp4'  && audioSel.value === 'opus') audioSel.value = 'aac';
 }
 
+// Hide platform-incompatible options once platform is known.
+// Called once from the bootstrap settings fetch; safe to call repeatedly.
+function _applyPlatformConstraints(platform) {
+  const isWin = platform === 'win32';
+  // VA-API is Linux-only — hide the option from every hw-encoder select
+  document.querySelectorAll('option[value="vaapi"]').forEach(opt => {
+    opt.hidden = isWin;
+    if (isWin && opt.parentElement.value === 'vaapi') {
+      opt.parentElement.value = 'software';
+    }
+  });
+  // Hide VA-API device path field (Linux-only setting)
+  const vaapiField = $('settings-vaapi-field');
+  if (vaapiField) vaapiField.style.display = isWin ? 'none' : '';
+}
+
 // Enforce codec/container/audio compatibility for any set of selects.
 // Disables incompatible options and auto-corrects the selected value when it
 // becomes invalid. Call any time codec or container changes, and on initial open.
@@ -2302,6 +2318,7 @@ async function openSettingsModal() {
     };
     _updateNetworkFieldVisibility();
     _enforceSettingsConstraints();
+    if (s.platform) _applyPlatformConstraints(s.platform);
 
     // Populate preset loader
     const presets = await _loadPresets(true);
@@ -2865,6 +2882,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   GET('/api/settings').then(s => {
     if (s?.needs_optimize_bitrate_threshold_kbps) {
       state.bitrateThreshold = s.needs_optimize_bitrate_threshold_kbps;
+    }
+    if (s?.platform) {
+      state.platform = s.platform;
+      _applyPlatformConstraints(s.platform);
     }
   }).catch(() => {});
 

@@ -563,7 +563,7 @@
             </select>
             <p class="modal-hint">GPU backend used for encoding. Each accelerator only supports certain codecs — unsupported combinations fall back automatically (VP9 on NVENC/AMF uses libvpx-vp9 in software). AV1 hardware encoding requires newer GPU generations: RTX 4000 series (NVENC), 12th gen Intel / Arc (QSV), RX 7000 series (AMF). VA-API support depends on your specific GPU and driver. Software encoding works on any machine but is significantly slower. Remux jobs are always CPU-only regardless of this setting.</p>
           </div>
-          <div class="settings-field">
+          <div class="settings-field" id="settings-vaapi-field">
             <label class="modal-label">VA-API Device Path</label>
             <input id="settings-vaapi-device" type="text" class="modal-input" placeholder="/dev/dri/renderD128" />
             <p class="modal-hint">Path to the VA-API render node. Only used when VA-API is selected above. Run <code>ls /dev/dri/</code> to list available nodes — use <code>renderD128</code> for the primary GPU, <code>renderD129</code> for a second GPU.</p>

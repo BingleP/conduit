@@ -99,9 +99,13 @@ def set_vaapi_device(path: str):
 
 def set_hw_encoder(hw: str):
     global _hw_encoder
+    import sys
     with _settings_lock:
-        if hw in ("nvenc", "qsv", "amf", "vaapi", "software"):
-            _hw_encoder = hw
+        if hw not in ("nvenc", "qsv", "amf", "vaapi", "software"):
+            hw = "software"
+        if hw == "vaapi" and sys.platform == "win32":
+            hw = "software"  # VA-API is Linux-only
+        _hw_encoder = hw
 
 
 def set_encode_options(
