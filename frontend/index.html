@@ -359,7 +359,6 @@
                 <option value="yuv420p">yuv420p (8-bit)</option>
                 <option value="yuv420p10le">yuv420p10le (10-bit)</option>
               </select>
-              <p id="ce-h264-10bit-warn" class="modal-hint warn-text hidden">Warning: No GPU supports hardware decoding of H.264 10-bit. Poor choice for streaming — players will fall back to CPU decoding. Use 8-bit or switch to HEVC/AV1 for 10-bit.</p>
             </div>
             <div class="custom-encode-row">
               <label class="modal-label">Speed</label>
@@ -642,7 +641,6 @@
               <option value="yuv420p">yuv420p — 8-bit, widest device compatibility</option>
               <option value="yuv420p10le">yuv420p10le — 10-bit, required for HDR content</option>
             </select>
-            <p id="settings-h264-10bit-warn" class="modal-hint warn-text hidden">Warning: No GPU supports hardware decoding of H.264 10-bit. This combination is a poor choice for streaming or media servers — players will fall back to slow CPU decoding. Use 8-bit yuv420p with H.264, or switch to HEVC/AV1 for 10-bit.</p>
             <p class="modal-hint">Forces a specific pixel format. Auto lets the encoder decide based on the source. Use <code>yuv420p</code> for maximum compatibility with older devices and media players. Use <code>yuv420p10le</code> to preserve 10-bit HDR. Not applied to VA-API encodes (VA-API manages pixel format internally).</p>
           </div>
           <div class="settings-field">
@@ -839,7 +837,7 @@
                 <div class="custom-encode-row"><label class="modal-label">Quality (CQ) <span id="pe-cq-display" style="float:right;color:var(--accent-red)">24</span></label><input id="pe-cq" type="range" class="settings-range" min="0" max="51" value="24"></div>
                 <div class="custom-encode-row"><label class="modal-label">Audio</label><select id="pe-audio-action" class="modal-input"><option value="opus">Opus</option><option value="aac">AAC</option><option value="ac3">AC3 (Dolby Digital)</option><option value="eac3">E-AC3 (Dolby Digital+)</option><option value="mp3">MP3</option><option value="flac">FLAC (lossless)</option><option value="pcm">PCM 24-bit (lossless)</option><option value="copy">Copy</option></select></div>
                 <div class="custom-encode-row"><label class="modal-label">Scale Height</label><select id="pe-scale-height" class="modal-input"><option value="0">No Scale</option><option value="2160">4K (2160p)</option><option value="1080">1080p</option><option value="720">720p</option><option value="480">480p</option></select></div>
-                <div class="custom-encode-row"><label class="modal-label">Pixel Format</label><select id="pe-pix-fmt" class="modal-input"><option value="auto">Auto</option><option value="yuv420p">yuv420p (8-bit)</option><option value="yuv420p10le">yuv420p10le (10-bit)</option></select><p id="pe-h264-10bit-warn" class="modal-hint warn-text hidden">Warning: No GPU supports hardware decoding of H.264 10-bit. Poor choice for streaming — players will fall back to CPU decoding. Use 8-bit or switch to HEVC/AV1 for 10-bit.</p></div>
+                <div class="custom-encode-row"><label class="modal-label">Pixel Format</label><select id="pe-pix-fmt" class="modal-input"><option value="auto">Auto</option><option value="yuv420p">yuv420p (8-bit)</option><option value="yuv420p10le">yuv420p10le (10-bit)</option></select></div>
                 <div class="custom-encode-row"><label class="modal-label">Encoder Speed</label><select id="pe-encoder-speed" class="modal-input"><option value="fast">Fast</option><option value="medium">Medium</option><option value="slow">Slow</option><option value="veryslow">Very Slow</option></select></div>
                 <div class="custom-encode-row"><label class="modal-label">Subtitles</label><select id="pe-subtitle-mode" class="modal-input"><option value="copy">Copy</option><option value="strip">Strip</option></select></div>
                 <div class="custom-encode-row"><label class="modal-label">Frame Rate Cap</label><select id="pe-fps-cap" class="modal-input"><option value="0">No Cap</option><option value="60">60 fps</option><option value="30">30 fps</option><option value="24">24 fps</option></select></div>
@@ -938,6 +936,27 @@
   <div id="flag-popover" class="flag-popover hidden">
     <div class="flag-popover-title">Flags for Optimization</div>
     <div id="flag-popover-content" class="flag-popover-content"></div>
+  </div>
+
+  <!-- H.264 10-bit Warning Popup -->
+  <div id="h264-10bit-modal" class="modal-overlay hidden">
+    <div class="modal modal-warn">
+      <div class="modal-header modal-header-warn">
+        <span class="modal-title">⚠ Poor Combination: H.264 + 10-bit</span>
+      </div>
+      <div class="modal-body modal-body-warn">
+        <p>No GPU — from any manufacturer — supports hardware <strong>decoding</strong> of H.264 10-bit (Hi10P). This means:</p>
+        <ul class="warn-list">
+          <li>Every device playing this file will fall back to <strong>software (CPU) decoding</strong></li>
+          <li>Media servers like Plex and Jellyfin will be <strong>forced to transcode</strong> in real-time</li>
+          <li>Playback on TVs, phones, and streaming sticks will likely <strong>fail or stutter</strong></li>
+        </ul>
+        <p class="warn-recommendation">Use <strong>8-bit (yuv420p)</strong> with H.264 for compatibility, or switch to <strong>HEVC or AV1</strong> if you need 10-bit — both have broad hardware decode support.</p>
+      </div>
+      <div class="modal-footer">
+        <button id="h264-10bit-ok" class="btn-confirm">Got it, continue anyway</button>
+      </div>
+    </div>
   </div>
 
   <!-- Browse Choice Modal -->

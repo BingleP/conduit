@@ -1163,9 +1163,10 @@ function _enforceCodecContainerAudio(codecSel, containerSel, audioSel) {
   }
 }
 
-function _checkH26410bit(codec, pixFmt, warnEl) {
-  const bad = (codec === 'h264') && (pixFmt === 'yuv420p10le');
-  warnEl.classList.toggle('hidden', !bad);
+function _checkH26410bit(codec, pixFmt) {
+  if (codec === 'h264' && pixFmt === 'yuv420p10le') {
+    openModal('h264-10bit-modal');
+  }
 }
 
 // ENCODE PARITY — keep in sync with _savePreset payload, _ceApplySettings, and CLAUDE.md
@@ -1222,7 +1223,7 @@ function _openPresetEditor(presetId = null) {
   }
 
   _enforceCodecContainerAudio($('pe-output-codec'), $('pe-container'), $('pe-audio-action'));
-  _checkH26410bit($('pe-output-codec').value, $('pe-pix-fmt').value, $('pe-h264-10bit-warn'));
+  _checkH26410bit($('pe-output-codec').value, $('pe-pix-fmt').value);
   editor.classList.remove('hidden');
   $('pe-name').focus();
 }
@@ -1358,7 +1359,7 @@ function _ceApplySettings(p) {
   if (p.denoise != null)         DOM.ceDenoise.checked        = p.denoise;
   if (p.extra_args != null)      DOM.ceExtraArgs.value        = p.extra_args;
   _enforceCodecContainerAudio(DOM.ceOutputCodec, DOM.ceContainer, DOM.ceAudioAction);
-  _checkH26410bit(DOM.ceOutputCodec.value, DOM.cePixFmt.value, $('ce-h264-10bit-warn'));
+  _checkH26410bit(DOM.ceOutputCodec.value, DOM.cePixFmt.value);
 }
 
 function _ceSetKeepOriginal(keep) {
@@ -2280,7 +2281,7 @@ async function openSettingsModal() {
     DOM.settingsExtraArgs.value        = s.extra_args || '';
 
     const _settingsCodec = DOM.settingsOutputCodec.querySelector('input[type="radio"]:checked')?.value || '';
-    _checkH26410bit(_settingsCodec, DOM.settingsPixFmt.value, $('settings-h264-10bit-warn'));
+    _checkH26410bit(_settingsCodec, DOM.settingsPixFmt.value);
 
     DOM.settingsThreshold.value = s.needs_optimize_bitrate_threshold_kbps || '';
     state.bitrateThreshold = s.needs_optimize_bitrate_threshold_kbps || 25000;
@@ -2764,14 +2765,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('pe-cq').addEventListener('input', () => { $('pe-cq-display').textContent = $('pe-cq').value; });
 
   // Preset editor — live codec/container/audio constraint enforcement + H.264 10-bit warning
-  const _peWarn = () => _checkH26410bit($('pe-output-codec').value, $('pe-pix-fmt').value, $('pe-h264-10bit-warn'));
+  const _peWarn = () => _checkH26410bit($('pe-output-codec').value, $('pe-pix-fmt').value);
   const _peCCA = () => { _enforceCodecContainerAudio($('pe-output-codec'), $('pe-container'), $('pe-audio-action')); _peWarn(); };
   $('pe-output-codec').addEventListener('change', _peCCA);
   $('pe-container').addEventListener('change', _peCCA);
   $('pe-pix-fmt').addEventListener('change', _peWarn);
 
   // Encode modal — live codec/container/audio constraint enforcement + H.264 10-bit warning
-  const _ceWarn = () => _checkH26410bit(DOM.ceOutputCodec.value, DOM.cePixFmt.value, $('ce-h264-10bit-warn'));
+  const _ceWarn = () => _checkH26410bit(DOM.ceOutputCodec.value, DOM.cePixFmt.value);
   const _ceCCA = () => { _enforceCodecContainerAudio(DOM.ceOutputCodec, DOM.ceContainer, DOM.ceAudioAction); _ceWarn(); };
   DOM.ceOutputCodec.addEventListener('change', _ceCCA);
   DOM.ceContainer.addEventListener('change', _ceCCA);
@@ -2780,7 +2781,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Settings — live codec/container/audio constraint enforcement + H.264 10-bit warning
   const _settingsWarn = () => {
     const codec = DOM.settingsOutputCodec.querySelector('input[type="radio"]:checked')?.value || '';
-    _checkH26410bit(codec, DOM.settingsPixFmt.value, $('settings-h264-10bit-warn'));
+    _checkH26410bit(codec, DOM.settingsPixFmt.value);
   };
   DOM.settingsOutputCodec.addEventListener('change', _settingsWarn);
   DOM.settingsPixFmt.addEventListener('change', _settingsWarn);
@@ -2827,6 +2828,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   DOM.browseBtn.addEventListener('click', handleBrowse);
   DOM.browseFolderBtn.addEventListener('click', handleBrowseFolder);
+
+  $('h264-10bit-ok').addEventListener('click', () => closeModal('h264-10bit-modal'));
 
   loadFiltersFromStorage();
 

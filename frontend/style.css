@@ -2991,6 +2991,51 @@ select.modal-input option:disabled {
   width: 440px;
 }
 
+/* ============================================================
+   H.264 10-bit Warning Modal
+   ============================================================ */
+
+.modal-warn {
+  width: 480px;
+  border-top: 4px solid var(--accent-yellow, #f5a623);
+}
+
+.modal-header-warn {
+  background: rgba(245, 166, 35, 0.12);
+}
+
+.modal-header-warn .modal-title {
+  color: var(--accent-yellow, #f5a623);
+  font-size: 15px;
+}
+
+.modal-body-warn {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.modal-body-warn p {
+  margin: 0;
+}
+
+.warn-list {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.warn-recommendation {
+  padding: 10px 12px;
+  background: rgba(245, 166, 35, 0.08);
+  border-left: 3px solid var(--accent-yellow, #f5a623);
+  border-radius: 0 4px 4px 0;
+}
+
 .drop-choice-body {
   padding: 20px 24px 8px;
 }
