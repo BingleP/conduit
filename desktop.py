@@ -106,11 +106,11 @@ def _install_qt_drop_filter():
     Must be called from the Qt main thread (e.g. from window.events.shown)."""
     try:
         try:
-            from PyQt6.QtWidgets import QApplication
+            from PyQt6.QtWidgets import QApplication, QWidget
             from PyQt6.QtCore import QObject, QEvent
             from PyQt6.QtWebEngineWidgets import QWebEngineView
         except ImportError:
-            from PySide6.QtWidgets import QApplication
+            from PySide6.QtWidgets import QApplication, QWidget
             from PySide6.QtCore import QObject, QEvent
             from PySide6.QtWebEngineWidgets import QWebEngineView
 
@@ -119,34 +119,49 @@ def _install_qt_drop_filter():
             log.warning("Qt DnD: no QApplication")
             return
 
+        _DRAG_TYPES = {QEvent.Type.DragEnter, QEvent.Type.DragMove,
+                       QEvent.Type.DragLeave, QEvent.Type.Drop}
+
         class _DropFilter(QObject):
             def eventFilter(self, obj, event):
-                if event.type() == QEvent.Type.Drop and event.mimeData().hasUrls():
-                    global _pending_drop_paths
-                    _pending_drop_paths = [
-                        u.toLocalFile() for u in event.mimeData().urls()
-                        if u.isLocalFile()
-                    ]
-                    log.debug("Qt DnD: stored %d paths", len(_pending_drop_paths))
+                t = event.type()
+                if t in _DRAG_TYPES:
+                    log.debug("Qt DnD event: type=%s obj=%s", t.name, type(obj).__name__)
+                if t == QEvent.Type.Drop:
+                    md = event.mimeData()
+                    log.debug("Qt DnD Drop: hasUrls=%s formats=%s", md.hasUrls(), md.formats())
+                    if md.hasUrls():
+                        global _pending_drop_paths
+                        _pending_drop_paths = [
+                            u.toLocalFile() for u in md.urls()
+                            if u.isLocalFile()
+                        ]
+                        log.info("Qt DnD: stored %d paths: %s",
+                                 len(_pending_drop_paths), _pending_drop_paths)
                 return False  # always let the event propagate to Chromium
 
         filt = _DropFilter()
         app._conduit_drop_filter = filt  # prevent GC
 
-        # QDropEvent is delivered to QWebEngineView, not QApplication.
-        # Find all QWebEngineView instances and install the filter on each.
+        # Install on QWebEngineView AND all its QWidget children, since on some
+        # Qt/Wayland configurations the actual drop target is a child rendering widget.
         installed = 0
         for top in app.topLevelWidgets():
             for wv in top.findChildren(QWebEngineView):
                 wv.setAcceptDrops(True)
                 wv.installEventFilter(filt)
                 installed += 1
-                log.info("Qt DnD: filter installed on QWebEngineView %r", wv)
+                log.info("Qt DnD: filter on WebView %r", wv)
+                for child in wv.findChildren(QWidget):
+                    child.setAcceptDrops(True)
+                    child.installEventFilter(filt)
+                    installed += 1
+                    log.info("Qt DnD: filter on child %s %r", type(child).__name__, child)
 
         if installed == 0:
             log.warning("Qt DnD: no QWebEngineView found — filter not installed")
         else:
-            log.info("Qt DnD: event filter installed on %d view(s)", installed)
+            log.info("Qt DnD: event filter installed on %d widget(s)", installed)
     except Exception as e:
         log.warning("Qt DnD setup failed: %s", e)
 
