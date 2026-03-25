@@ -97,148 +97,42 @@ def _wait_for_server(url: str, timeout: float = 15.0) -> bool:
 # Native drag-and-drop interception
 # ---------------------------------------------------------------------------
 
-def _setup_native_dnd(pywebview_window):
-    """Intercept file-manager drops at the native layer and pass paths to JS.
-    Tries the GTK backend first, then Qt. Called from webview.start(func=...)
-    which runs in a background thread after the window is shown."""
+# Paths stored by the Qt event filter on Drop; read by _Api.get_pending_drop_paths()
+_pending_drop_paths: list = []
+
+
+def _install_qt_drop_filter():
+    """Install a passive Qt event filter that records dropped file paths.
+    Must be called from the Qt main thread (e.g. from window.events.shown)."""
     try:
-        _setup_gtk_dnd(pywebview_window)
-        return
-    except Exception as e:
-        log.debug("GTK DnD not available: %s", e)
-    try:
-        _setup_qt_dnd(pywebview_window)
-        return
-    except Exception as e:
-        log.debug("Qt DnD not available: %s", e)
-    log.warning("No native DnD backend available — drag-and-drop will not work")
-
-
-def _setup_gtk_dnd(pywebview_window):
-    import gi
-    from gi.repository import GLib
-
-    def _on_idle():
         try:
-            gi.require_version('Gtk', '3.0')
-            gi.require_version('Gdk', '3.0')
-            from gi.repository import Gtk, Gdk, GObject
-
-            toplevels = [w for w in Gtk.Window.list_toplevels() if w.get_visible()]
-            if not toplevels:
-                log.warning("GTK DnD: no visible toplevel windows")
-                return False
-
-            gtk_window = toplevels[0]
-            target = _find_gtk_webview(gtk_window) or gtk_window
-
-            target.drag_dest_set(Gtk.DestDefaults.ALL, [], Gdk.DragAction.COPY)
-            target.drag_dest_add_uri_targets()
-
-            def on_drop(widget, ctx, x, y, sel, info, ts):
-                uris = sel.get_uris() or []
-                paths = [_urlparse.unquote(u[7:]) for u in uris if u.startswith('file://')]
-                if paths:
-                    js = f'window._pyDroppedPaths({_json.dumps(paths)})'
-                    GLib.idle_add(lambda: _eval_js(pywebview_window, js) or False)
-                Gtk.drag_finish(ctx, bool(paths), False, ts)
-                try:
-                    GObject.signal_stop_emission_by_name(widget, 'drag-data-received')
-                except Exception:
-                    pass
-
-            target.connect('drag-data-received', on_drop)
-            log.info("GTK DnD: connected to %s", type(target).__name__)
-        except Exception as e:
-            log.warning("GTK DnD idle error: %s", e)
-        return False
-
-    GLib.idle_add(_on_idle)
-
-
-def _setup_qt_dnd(pywebview_window):
-    try:
-        from PyQt6.QtWidgets import QApplication
-        from PyQt6.QtCore import QObject, QEvent
-    except ImportError:
-        from PySide6.QtWidgets import QApplication
-        from PySide6.QtCore import QObject, QEvent
-
-    app = QApplication.instance()
-    if app is None:
-        raise RuntimeError("No QApplication instance")
-
-    try:
-        from PyQt6.QtWebEngineWidgets import QWebEngineView
-    except ImportError:
-        try:
-            from PySide6.QtWebEngineWidgets import QWebEngineView
+            from PyQt6.QtWidgets import QApplication
+            from PyQt6.QtCore import QObject, QEvent
         except ImportError:
-            QWebEngineView = None
+            from PySide6.QtWidgets import QApplication
+            from PySide6.QtCore import QObject, QEvent
 
-    class _DropFilter(QObject):
-        def eventFilter(self, obj, event):
-            t = event.type()
-            if t == QEvent.Type.DragEnter:
-                if event.mimeData().hasUrls():
-                    event.acceptProposedAction()
-                    return True
-            elif t == QEvent.Type.DragMove:
-                if event.mimeData().hasUrls():
-                    event.acceptProposedAction()
-                    return True
-            elif t == QEvent.Type.Drop:
-                urls = event.mimeData().urls()
-                paths = [u.toLocalFile() for u in urls if u.isLocalFile()]
-                if paths:
-                    js = f'window._pyDroppedPaths({_json.dumps(paths)})'
-                    _eval_js(pywebview_window, js)
-                event.acceptProposedAction()
-                return True
-            return False
+        app = QApplication.instance()
+        if app is None:
+            log.warning("Qt DnD: no QApplication")
+            return
 
-    drop_filter = _DropFilter()
-    app.installEventFilter(drop_filter)
+        class _DropFilter(QObject):
+            def eventFilter(self, obj, event):
+                if event.type() == QEvent.Type.Drop and event.mimeData().hasUrls():
+                    global _pending_drop_paths
+                    _pending_drop_paths = [
+                        u.toLocalFile() for u in event.mimeData().urls()
+                        if u.isLocalFile()
+                    ]
+                    log.debug("Qt DnD: stored %d paths", len(_pending_drop_paths))
+                return False  # always let the event propagate to Chromium
 
-    for widget in app.topLevelWidgets():
-        if widget.isVisible():
-            widget.setAcceptDrops(True)
-            if QWebEngineView:
-                for wv in widget.findChildren(QWebEngineView):
-                    wv.setAcceptDrops(True)
-
-    app._conduit_drop_filter = drop_filter  # prevent GC
-    log.info("Qt DnD: event filter installed")
-
-
-def _find_gtk_webview(container):
-    """Recursively find a WebKit2.WebView in a GTK widget tree."""
-    try:
-        import gi
-        for ver in ('4.1', '4.0'):
-            try:
-                gi.require_version('WebKit2', ver)
-                break
-            except Exception:
-                continue
-        from gi.repository import WebKit2
-        if isinstance(container, WebKit2.WebView):
-            return container
-    except Exception:
-        pass
-    if hasattr(container, 'get_children'):
-        for child in container.get_children():
-            result = _find_gtk_webview(child)
-            if result:
-                return result
-    return None
-
-
-def _eval_js(pywebview_window, js):
-    try:
-        pywebview_window.evaluate_js(js)
+        app._conduit_drop_filter = _DropFilter()  # prevent GC
+        app.installEventFilter(app._conduit_drop_filter)
+        log.info("Qt DnD: event filter installed")
     except Exception as e:
-        log.warning("evaluate_js error: %s", e)
+        log.warning("Qt DnD setup failed: %s", e)
 
 
 # ---------------------------------------------------------------------------
@@ -321,6 +215,12 @@ def main():
                 result = webview.windows[0].create_file_dialog(webview.FOLDER_DIALOG)
                 return result[0] if result else None
 
+            def get_pending_drop_paths(self):
+                global _pending_drop_paths
+                paths = list(_pending_drop_paths)
+                _pending_drop_paths = []
+                return paths
+
         window = webview.create_window(
             "Conduit",
             local_url,
@@ -337,9 +237,10 @@ def main():
             server.should_exit = True
 
         window.events.closed += on_closed
+        window.events.shown += _install_qt_drop_filter
 
         log.info("Calling webview.start()")
-        webview.start(debug=False, func=_setup_native_dnd, args=[window])
+        webview.start(debug=False)
         log.info("webview.start() returned")
     except Exception as e:
         log.exception("webview error: %s", e)

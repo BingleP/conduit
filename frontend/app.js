@@ -916,36 +916,38 @@ function _initDragAndDrop() {
     e.dataTransfer.dropEffect = 'copy';
   });
 
-  // Prevent the browser from navigating to the dropped file; actual handling is via
-  // window._pyDroppedPaths() called from Python after native DnD interception
-  document.addEventListener('drop', e => {
+  // On drop: ask Python for the paths it captured via the Qt event filter,
+  // then resolve them against the DB and show the choice modal.
+  document.addEventListener('drop', async e => {
     e.preventDefault();
     _dragCounter = 0;
     DOM.dropOverlay.classList.add('hidden');
+
+    let paths = [];
+    try {
+      paths = await window.pywebview.api.get_pending_drop_paths();
+    } catch {
+      return; // not in desktop context
+    }
+    if (!paths?.length) return;
+
+    try {
+      const res = await POST('/api/resolve-drops', { paths });
+      const resolved = res?.files || [];
+      if (!resolved.length) {
+        _showDropError('No supported video files found in the dropped items.');
+        return;
+      }
+      state._dropResolvedFiles = resolved;
+      const n = resolved.length;
+      DOM.dropChoiceCount.textContent = n;
+      DOM.dropChoicePlural.textContent = n !== 1 ? 's' : '';
+      openModal('drop-choice-modal');
+    } catch (err) {
+      _showDropError(`Failed to resolve dropped files: ${err.message}`);
+    }
   });
 }
-
-// Called from desktop.py via evaluate_js after native DnD interception extracts the paths
-window._pyDroppedPaths = async function(paths) {
-  _dragCounter = 0;
-  DOM.dropOverlay.classList.add('hidden');
-  if (!paths?.length) return;
-  try {
-    const res = await POST('/api/resolve-drops', { paths });
-    const resolved = res?.files || [];
-    if (!resolved.length) {
-      _showDropError('No supported video files found in the dropped items.');
-      return;
-    }
-    state._dropResolvedFiles = resolved;
-    const n = resolved.length;
-    DOM.dropChoiceCount.textContent = n;
-    DOM.dropChoicePlural.textContent = n !== 1 ? 's' : '';
-    openModal('drop-choice-modal');
-  } catch (err) {
-    _showDropError(`Failed to resolve dropped files: ${err.message}`);
-  }
-};
 
 function _showDropError(msg) {
   DOM.encodeErrorFilename.textContent = 'Drag-and-drop';
