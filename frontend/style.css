@@ -2895,6 +2895,16 @@ select.modal-input option:disabled {
   margin-bottom: 2px;
 }
 
+.about-section-subtitle {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent-blue, #4f8ef7);
+  margin-bottom: 2px;
+  margin-top: 6px;
+}
+
 .about-text {
   font-size: 13px;
   color: var(--text-secondary);

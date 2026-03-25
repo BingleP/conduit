@@ -2630,6 +2630,27 @@ function renderAboutHtml(s) {
     </div>
 
     <div class="about-section">
+      <div class="about-section-title">Failsafes &amp; Compatibility Rules</div>
+      <p class="about-text">Conduit enforces these rules automatically — both in the UI (invalid options are disabled/auto-corrected before you submit) and in the encoder backend (applied again at encode time as a final safety net).</p>
+
+      <div class="about-section-subtitle">Container ↔ Codec</div>
+      ${row('WebM', 'Only <strong>VP9</strong> is allowed. H.264 and HEVC are disabled. If either is selected when you switch to WebM, the codec resets to VP9 automatically.')}
+      ${row('MP4', '<strong>VP9</strong> is not allowed in MP4. Switching to MP4 while VP9 is selected resets the codec to HEVC.')}
+      ${row('MKV', 'All codecs (H.264, HEVC, AV1, VP9) are supported — no restrictions.')}
+
+      <div class="about-section-subtitle" style="margin-top:10px">Container ↔ Audio</div>
+      ${row('WebM', 'Only <strong>Opus</strong> is allowed. AAC, AC3, E-AC3, MP3, FLAC, PCM, and Copy are all disabled. If any of these are selected when you switch to WebM, the audio resets to Opus. The encoder applies the same override at encode time regardless of what was saved.')}
+      ${row('MP4', '<strong>Opus, FLAC, and PCM</strong> are not compatible with MP4. If any of these are selected, the audio resets to AAC. The encoder enforces this override even if the setting reached it some other way.')}
+      ${row('MKV', 'All audio codecs are supported — no restrictions.')}
+
+      <div class="about-section-subtitle" style="margin-top:10px">Codec ↔ Hardware</div>
+      ${row('VP9', 'Always encoded in <strong>software</strong> using <code>libvpx-vp9</code> regardless of which hardware encoder is selected. No GPU supports hardware VP9 encoding with acceptable quality/compatibility.')}
+
+      <div class="about-section-subtitle" style="margin-top:10px">Warning: H.264 + 10-bit</div>
+      ${row('H.264 + yuv420p10le', 'Selecting H.264 with a 10-bit pixel format (yuv420p10le) triggers a <strong>warning popup</strong> in the UI. No GPU from any manufacturer supports hardware <em>decoding</em> of H.264 Hi10P, so every device playing the file falls back to software CPU decode. Media servers will be forced to transcode in real-time. This combination is not blocked — just warned against. Use 8-bit (yuv420p) with H.264, or switch to HEVC or AV1 for 10-bit content.')}
+    </div>
+
+    <div class="about-section">
       <div class="about-section-title">HDR Handling</div>
       ${row('HDR10', `Fully preserved through ${codecName} re-encoding. Color space, transfer function, and mastering display metadata are passed through regardless of which hardware encoder is used.`)}
       ${row('HDR10+ / Dolby Vision', `Dynamic HDR metadata <strong>cannot survive re-encoding</strong> on any hardware encoder. You are prompted to choose: <em>Remux</em> (copy video stream, preserve all metadata, re-encode audio only) or <em>Re-encode</em> (full ${codecName} encode, dynamic HDR is lost, falls back to HDR10 or SDR). This prompt also appears when using the Encode button.`)}
