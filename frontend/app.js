@@ -1163,6 +1163,11 @@ function _enforceCodecContainerAudio(codecSel, containerSel, audioSel) {
   }
 }
 
+function _checkH26410bit(codec, pixFmt, warnEl) {
+  const bad = (codec === 'h264') && (pixFmt === 'yuv420p10le');
+  warnEl.classList.toggle('hidden', !bad);
+}
+
 // ENCODE PARITY — keep in sync with _savePreset payload, _ceApplySettings, and CLAUDE.md
 // field list. Add new encode fields here (both load and reset branches) when added anywhere.
 function _openPresetEditor(presetId = null) {
@@ -1217,6 +1222,7 @@ function _openPresetEditor(presetId = null) {
   }
 
   _enforceCodecContainerAudio($('pe-output-codec'), $('pe-container'), $('pe-audio-action'));
+  _checkH26410bit($('pe-output-codec').value, $('pe-pix-fmt').value, $('pe-h264-10bit-warn'));
   editor.classList.remove('hidden');
   $('pe-name').focus();
 }
@@ -1352,6 +1358,7 @@ function _ceApplySettings(p) {
   if (p.denoise != null)         DOM.ceDenoise.checked        = p.denoise;
   if (p.extra_args != null)      DOM.ceExtraArgs.value        = p.extra_args;
   _enforceCodecContainerAudio(DOM.ceOutputCodec, DOM.ceContainer, DOM.ceAudioAction);
+  _checkH26410bit(DOM.ceOutputCodec.value, DOM.cePixFmt.value, $('ce-h264-10bit-warn'));
 }
 
 function _ceSetKeepOriginal(keep) {
@@ -2272,6 +2279,9 @@ async function openSettingsModal() {
     DOM.settingsDenoise.checked        = s.denoise || false;
     DOM.settingsExtraArgs.value        = s.extra_args || '';
 
+    const _settingsCodec = DOM.settingsOutputCodec.querySelector('input[type="radio"]:checked')?.value || '';
+    _checkH26410bit(_settingsCodec, DOM.settingsPixFmt.value, $('settings-h264-10bit-warn'));
+
     DOM.settingsThreshold.value = s.needs_optimize_bitrate_threshold_kbps || '';
     state.bitrateThreshold = s.needs_optimize_bitrate_threshold_kbps || 25000;
     DOM.settingsFlagAv1.checked = s.flag_av1 !== false;
@@ -2753,17 +2763,27 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('pe-save-btn').addEventListener('click', _savePreset);
   $('pe-cq').addEventListener('input', () => { $('pe-cq-display').textContent = $('pe-cq').value; });
 
-  // Preset editor — live codec/container/audio constraint enforcement
-  const _peCCA = () => _enforceCodecContainerAudio($('pe-output-codec'), $('pe-container'), $('pe-audio-action'));
+  // Preset editor — live codec/container/audio constraint enforcement + H.264 10-bit warning
+  const _peWarn = () => _checkH26410bit($('pe-output-codec').value, $('pe-pix-fmt').value, $('pe-h264-10bit-warn'));
+  const _peCCA = () => { _enforceCodecContainerAudio($('pe-output-codec'), $('pe-container'), $('pe-audio-action')); _peWarn(); };
   $('pe-output-codec').addEventListener('change', _peCCA);
   $('pe-container').addEventListener('change', _peCCA);
+  $('pe-pix-fmt').addEventListener('change', _peWarn);
 
-  // Encode modal — live codec/container/audio constraint enforcement
-  const _ceCCA = () => _enforceCodecContainerAudio(DOM.ceOutputCodec, DOM.ceContainer, DOM.ceAudioAction);
+  // Encode modal — live codec/container/audio constraint enforcement + H.264 10-bit warning
+  const _ceWarn = () => _checkH26410bit(DOM.ceOutputCodec.value, DOM.cePixFmt.value, $('ce-h264-10bit-warn'));
+  const _ceCCA = () => { _enforceCodecContainerAudio(DOM.ceOutputCodec, DOM.ceContainer, DOM.ceAudioAction); _ceWarn(); };
   DOM.ceOutputCodec.addEventListener('change', _ceCCA);
   DOM.ceContainer.addEventListener('change', _ceCCA);
+  DOM.cePixFmt.addEventListener('change', _ceWarn);
 
-  // Settings — live codec/container/audio constraint enforcement
+  // Settings — live codec/container/audio constraint enforcement + H.264 10-bit warning
+  const _settingsWarn = () => {
+    const codec = DOM.settingsOutputCodec.querySelector('input[type="radio"]:checked')?.value || '';
+    _checkH26410bit(codec, DOM.settingsPixFmt.value, $('settings-h264-10bit-warn'));
+  };
+  DOM.settingsOutputCodec.addEventListener('change', _settingsWarn);
+  DOM.settingsPixFmt.addEventListener('change', _settingsWarn);
   DOM.settingsOutputCodec.addEventListener('change', _enforceSettingsConstraints);
   DOM.settingsOutputContainer.addEventListener('change', _enforceSettingsConstraints);
 
