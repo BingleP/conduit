@@ -1,12 +1,16 @@
 import asyncio
 import json
+import logging
 import os
 import threading
 import time
+import traceback
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
+_log = logging.getLogger("conduit.main")
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -182,6 +186,13 @@ def verify_credentials(request: Request, credentials: Optional[HTTPBasicCredenti
 # ---------------------------------------------------------------------------
 
 app = FastAPI(title="Conduit", dependencies=[Depends(verify_credentials)])
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: Request, exc: Exception):
+    _log.error("Unhandled exception on %s %s:\n%s",
+               request.method, request.url.path,
+               "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)))
+    return JSONResponse(status_code=500, content={"detail": str(exc)})
 
 app.add_middleware(
     CORSMiddleware,
