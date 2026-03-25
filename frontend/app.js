@@ -1501,8 +1501,9 @@ async function submitJobs(fileIds, jobType, keepOriginal = false, encodeOverride
       if (encodeOverrides.pix_fmt)                 payload.pix_fmt         = encodeOverrides.pix_fmt;
       if (encodeOverrides.encoder_speed)           payload.encoder_speed   = encodeOverrides.encoder_speed;
       if (encodeOverrides.subtitle_mode)           payload.subtitle_mode   = encodeOverrides.subtitle_mode;
-      if (encodeOverrides.force_stereo != null)    payload.force_stereo    = encodeOverrides.force_stereo;
-      if (encodeOverrides.audio_normalize != null) payload.audio_normalize = encodeOverrides.audio_normalize;
+      if (encodeOverrides.force_stereo != null)       payload.force_stereo       = encodeOverrides.force_stereo;
+      if (encodeOverrides.audio_normalize != null)    payload.audio_normalize    = encodeOverrides.audio_normalize;
+      if (encodeOverrides.force_encode_audio != null) payload.force_encode_audio = encodeOverrides.force_encode_audio;
       if (encodeOverrides.fps_cap != null)         payload.fps_cap         = encodeOverrides.fps_cap;
       if (encodeOverrides.deinterlace != null)     payload.deinterlace     = encodeOverrides.deinterlace;
       if (encodeOverrides.autocrop != null)        payload.autocrop        = encodeOverrides.autocrop;
