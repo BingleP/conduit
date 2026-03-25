@@ -326,6 +326,11 @@
               <select id="ce-audio-action" class="modal-input">
                 <option value="opus">Opus</option>
                 <option value="aac">AAC</option>
+                <option value="ac3">AC3 (Dolby Digital)</option>
+                <option value="eac3">E-AC3 (Dolby Digital+)</option>
+                <option value="mp3">MP3</option>
+                <option value="flac">FLAC (lossless)</option>
+                <option value="pcm">PCM 24-bit (lossless)</option>
                 <option value="copy">Copy</option>
               </select>
             </div>
@@ -690,13 +695,18 @@
         <!-- Audio tab -->
         <div id="stab-audio" class="settings-tab-content">
           <div class="settings-field">
-            <label class="modal-label">Lossy Track Handling</label>
+            <label class="modal-label">Audio Encoding</label>
             <select id="settings-audio-action" class="modal-input">
-              <option value="opus">Re-encode to Opus — best quality/size ratio, 320 kbps 5.1 / 192 kbps stereo</option>
-              <option value="aac">Re-encode to AAC — broad device compatibility, 256 kbps 5.1 / 160 kbps stereo</option>
-              <option value="copy">Copy all tracks — keep every audio stream exactly as-is</option>
+              <option value="opus">Opus — best quality/size ratio, 320 kbps 5.1 / 192 kbps stereo</option>
+              <option value="aac">AAC — broad device compatibility, 256 kbps 5.1 / 160 kbps stereo</option>
+              <option value="ac3">AC3 (Dolby Digital) — 640 kbps, up to 5.1, MKV/MP4</option>
+              <option value="eac3">E-AC3 (Dolby Digital+) — 768 kbps, up to 7.1, MKV/MP4</option>
+              <option value="mp3">MP3 — legacy compatibility, stereo only, VBR ~190 kbps</option>
+              <option value="flac">FLAC — lossless, MKV only</option>
+              <option value="pcm">PCM (24-bit) — uncompressed lossless, MKV only, large files</option>
+              <option value="copy">Copy — keep every audio stream exactly as-is</option>
             </select>
-            <p class="modal-hint">Applies to lossy tracks: EAC3 (Dolby Digital+), AC3 (Dolby Digital), DTS, AAC, and MP3. Lossless tracks (TrueHD, DTS-HD MA, FLAC, PCM) are always copied without re-encoding regardless of this setting. If no matching language track is found, the first audio track is kept as a fallback.</p>
+            <p class="modal-hint">Applies to lossy source tracks (EAC3, AC3, DTS, AAC, MP3). Lossless tracks (TrueHD, DTS-HD MA, FLAC, PCM) are always copied unless "Force Re-encode Audio" is enabled.</p>
           </div>
           <div class="settings-field">
             <label class="modal-label">Keep Audio Languages</label>
@@ -825,7 +835,7 @@
                 <div class="custom-encode-row"><label class="modal-label">Codec</label><select id="pe-output-codec" class="modal-input"><option value="hevc">HEVC</option><option value="av1">AV1</option><option value="h264">H.264</option><option value="vp9">VP9</option></select></div>
                 <div class="custom-encode-row"><label class="modal-label">Container</label><select id="pe-container" class="modal-input"><option value="mkv">MKV</option><option value="mp4">MP4</option><option value="webm">WebM</option></select></div>
                 <div class="custom-encode-row"><label class="modal-label">Quality (CQ) <span id="pe-cq-display" style="float:right;color:var(--accent-red)">24</span></label><input id="pe-cq" type="range" class="settings-range" min="0" max="51" value="24"></div>
-                <div class="custom-encode-row"><label class="modal-label">Audio</label><select id="pe-audio-action" class="modal-input"><option value="opus">Opus</option><option value="aac">AAC</option><option value="copy">Copy</option></select></div>
+                <div class="custom-encode-row"><label class="modal-label">Audio</label><select id="pe-audio-action" class="modal-input"><option value="opus">Opus</option><option value="aac">AAC</option><option value="ac3">AC3 (Dolby Digital)</option><option value="eac3">E-AC3 (Dolby Digital+)</option><option value="mp3">MP3</option><option value="flac">FLAC (lossless)</option><option value="pcm">PCM 24-bit (lossless)</option><option value="copy">Copy</option></select></div>
                 <div class="custom-encode-row"><label class="modal-label">Scale Height</label><select id="pe-scale-height" class="modal-input"><option value="0">No Scale</option><option value="2160">4K (2160p)</option><option value="1080">1080p</option><option value="720">720p</option><option value="480">480p</option></select></div>
                 <div class="custom-encode-row"><label class="modal-label">Pixel Format</label><select id="pe-pix-fmt" class="modal-input"><option value="auto">Auto</option><option value="yuv420p">yuv420p (8-bit)</option><option value="yuv420p10le">yuv420p10le (10-bit)</option></select></div>
                 <div class="custom-encode-row"><label class="modal-label">Encoder Speed</label><select id="pe-encoder-speed" class="modal-input"><option value="fast">Fast</option><option value="medium">Medium</option><option value="slow">Slow</option><option value="veryslow">Very Slow</option></select></div>

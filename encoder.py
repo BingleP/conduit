@@ -276,6 +276,28 @@ def _build_audio_args(audio_tracks: list, languages: list = None, lossy_action: 
             args += [f"-c:a:{idx}", "aac", f"-b:a:{idx}", br, f"-ac:a:{idx}", str(out_channels)]
             if sample_rate:
                 args += [f"-ar:{idx}", str(sample_rate)]
+        elif lossy_action == "mp3":
+            out_channels = min(2, 2 if (force_stereo and channels > 2) else channels)  # mp3 max 2ch
+            args += [f"-c:a:{idx}", "libmp3lame", f"-q:a:{idx}", "2", f"-ac:a:{idx}", str(out_channels)]
+            if sample_rate:
+                args += [f"-ar:{idx}", str(sample_rate)]
+        elif lossy_action == "ac3":
+            out_channels = 2 if (force_stereo and channels > 2) else min(channels, 6)
+            args += [f"-c:a:{idx}", "ac3", f"-b:a:{idx}", "640k", f"-ac:a:{idx}", str(out_channels)]
+        elif lossy_action == "eac3":
+            out_channels = 2 if (force_stereo and channels > 2) else min(channels, 8)
+            args += [f"-c:a:{idx}", "eac3", f"-b:a:{idx}", "768k", f"-ac:a:{idx}", str(out_channels)]
+        elif lossy_action == "flac":
+            out_channels = 2 if (force_stereo and channels > 2) else channels
+            args += [f"-c:a:{idx}", "flac", f"-compression_level:a:{idx}", "8",
+                     f"-ac:a:{idx}", str(out_channels)]
+            if sample_rate:
+                args += [f"-ar:{idx}", str(sample_rate)]
+        elif lossy_action == "pcm":
+            out_channels = 2 if (force_stereo and channels > 2) else channels
+            args += [f"-c:a:{idx}", "pcm_s24le", f"-ac:a:{idx}", str(out_channels)]
+            if sample_rate:
+                args += [f"-ar:{idx}", str(sample_rate)]
         else:  # opus (default)
             out_channels = 2 if (force_stereo and channels > 2) else channels
             br = _opus_bitrate(out_channels)
@@ -438,10 +460,12 @@ def build_ffmpeg_cmd(file_row, job_type: str, input_path: str, output_path: str,
         eff_force_enc_audio   = force_encode_audio_override if force_encode_audio_override is not None else _force_encode_audio
 
     # Container-specific audio overrides
-    if eff_container == "webm" and eff_audio != "opus":
-        eff_audio = "opus"   # WebM requires Opus
-    if eff_container == "mp4" and eff_audio == "opus":
-        eff_audio = "aac"    # MP4 doesn't reliably support libopus
+    _WEBM_AUDIO_ONLY = {"opus"}
+    _MP4_INCOMPATIBLE = {"opus", "flac", "pcm"}
+    if eff_container == "webm" and eff_audio not in _WEBM_AUDIO_ONLY:
+        eff_audio = "opus"   # WebM only supports Opus
+    if eff_container == "mp4" and eff_audio in _MP4_INCOMPATIBLE:
+        eff_audio = "aac"    # MP4 fallback for incompatible codecs
 
     # No subtitles/attachments for WebM or MP4 (incompatible formats)
     subs_supported = (eff_container == "mkv")

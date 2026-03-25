@@ -243,7 +243,7 @@ class AddJobsRequest(BaseModel):
     hw_encoder: Optional[str] = None            # nvenc | qsv | amf | vaapi | software
     output_video_codec: Optional[str] = None    # hevc | av1 | h264 | vp9
     video_quality_cq: Optional[int] = None      # 0–51
-    audio_lossy_action: Optional[str] = None    # opus | aac | copy
+    audio_lossy_action: Optional[str] = None    # opus | aac | ac3 | eac3 | mp3 | flac | pcm | copy
     output_container: Optional[str] = None      # mkv | mp4 | webm
     scale_height: Optional[int] = None          # None | 2160 | 1080 | 720 | 480
     pix_fmt: Optional[str] = None               # auto | yuv420p | yuv420p10le
@@ -291,7 +291,7 @@ class UpdateSettingsRequest(BaseModel):
     flag_av1: Optional[bool] = None
     output_video_codec: Optional[str] = None  # hevc | av1 | h264 | vp9
     video_quality_cq: Optional[int] = None    # 0–51
-    audio_lossy_action: Optional[str] = None  # opus | aac | copy
+    audio_lossy_action: Optional[str] = None  # opus | aac | ac3 | eac3 | mp3 | flac | pcm | copy
     audio_languages: Optional[list] = None    # [] = keep all
     output_container: Optional[str] = None    # mkv | mp4 | webm
     scale_height: Optional[int] = None        # None | 2160 | 1080 | 720 | 480
@@ -410,7 +410,7 @@ def update_settings(req: UpdateSettingsRequest):
             VIDEO_QUALITY_CQ = req.video_quality_cq
             config["video_quality_cq"] = req.video_quality_cq
             encode_changed = True
-        if req.audio_lossy_action is not None and req.audio_lossy_action in ("opus", "aac", "copy"):
+        if req.audio_lossy_action is not None and req.audio_lossy_action in ("opus", "aac", "ac3", "eac3", "mp3", "flac", "pcm", "copy"):
             AUDIO_LOSSY_ACTION = req.audio_lossy_action
             config["audio_lossy_action"] = req.audio_lossy_action
             encode_changed = True

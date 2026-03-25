@@ -1146,11 +1146,20 @@ function _enforceCodecContainerAudio(codecSel, containerSel, audioSel) {
   // --- audio constraints by container ---
   if (audioSel) {
     const con = containerSel.value;
-    audioSel.querySelector('[value="aac"]').disabled  = (con === 'webm');           // WebM: no AAC
-    audioSel.querySelector('[value="copy"]').disabled = (con === 'webm');           // WebM: no Copy
-    audioSel.querySelector('[value="opus"]').disabled = (con === 'mp4');            // MP4: no Opus
-    if (con === 'webm' && audioSel.value !== 'opus') audioSel.value = 'opus';
-    if (con === 'mp4'  && audioSel.value === 'opus') audioSel.value = 'aac';
+    // WebM: Opus only
+    const webm = con === 'webm';
+    // MP4: no Opus, no FLAC, no PCM
+    const mp4  = con === 'mp4';
+    audioSel.querySelector('[value="opus"]').disabled = mp4;
+    audioSel.querySelector('[value="aac"]').disabled  = webm;
+    audioSel.querySelector('[value="ac3"]').disabled  = webm;
+    audioSel.querySelector('[value="eac3"]').disabled = webm;
+    audioSel.querySelector('[value="mp3"]').disabled  = webm;
+    audioSel.querySelector('[value="flac"]').disabled = webm || mp4;
+    audioSel.querySelector('[value="pcm"]').disabled  = webm || mp4;
+    audioSel.querySelector('[value="copy"]').disabled = webm;
+    if (webm && audioSel.value !== 'opus') audioSel.value = 'opus';
+    if (mp4  && (audioSel.value === 'opus' || audioSel.value === 'flac' || audioSel.value === 'pcm')) audioSel.value = 'aac';
   }
 }
 
