@@ -140,7 +140,7 @@ BUILTIN_PRESETS = [
         "output_video_codec": "av1",
         "video_quality_cq": 32,
         "audio_lossy_action": "opus",
-        "output_container": "mkv",
+        "output_container": "webm",
         "builtin": True,
         "description": "Hardware AV1 for fast, efficient encodes with excellent compression. Requires RTX 4000+ (NVENC), Intel Arc / 12th gen+ (QSV), or RX 7000+ (AMF) — switch the accelerator to match your GPU.",
     },
