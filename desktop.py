@@ -190,8 +190,8 @@ def main():
         # surface is first mapped.  pywebview reuses an existing QApplication
         # instance, so this takes effect for the whole session.
         try:
-            from PyQt6.QtWidgets import QApplication
-            from PyQt6.QtGui import QIcon
+            from PySide6.QtWidgets import QApplication
+            from PySide6.QtGui import QIcon
             _qt_app = QApplication.instance() or QApplication(sys.argv)
             _qt_app.setApplicationName("Conduit")
             _qt_app.setDesktopFileName("conduit")
