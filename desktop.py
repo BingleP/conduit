@@ -185,6 +185,22 @@ def main():
 
         _icon_path = os.path.join(_PROJECT_DIR, "frontend", "icons", "conduit-256.png")
 
+        # Pre-create the QApplication and set identity BEFORE webview.start()
+        # so the Wayland compositor receives the correct app_id when the XDG
+        # surface is first mapped.  pywebview reuses an existing QApplication
+        # instance, so this takes effect for the whole session.
+        try:
+            from PyQt6.QtWidgets import QApplication
+            from PyQt6.QtGui import QIcon
+            _qt_app = QApplication.instance() or QApplication(sys.argv)
+            _qt_app.setApplicationName("Conduit")
+            _qt_app.setDesktopFileName("conduit")
+            if os.path.exists(_icon_path):
+                _qt_app.setWindowIcon(QIcon(_icon_path))
+            log.info("Qt app identity set before window creation")
+        except Exception as exc:
+            log.warning("Could not pre-configure Qt app: %s", exc)
+
         window = webview.create_window(
             "Conduit",
             local_url,
@@ -201,24 +217,6 @@ def main():
             server.should_exit = True
 
         window.events.closed += on_closed
-
-        def _on_shown():
-            """Set the Qt application icon and desktop file name for Wayland."""
-            try:
-                from PyQt6.QtWidgets import QApplication
-                from PyQt6.QtGui import QIcon
-                app = QApplication.instance()
-                if app:
-                    # Required on Wayland so the compositor matches this window
-                    # to conduit.desktop and uses its icon in the taskbar/switcher.
-                    app.setDesktopFileName("conduit")
-                    if os.path.exists(_icon_path):
-                        app.setWindowIcon(QIcon(_icon_path))
-                    log.info("Window icon and desktop name set")
-            except Exception as exc:
-                log.warning("Could not set window icon: %s", exc)
-
-        window.events.shown += _on_shown
 
         log.info("Calling webview.start()")
         webview.start(debug=False)
