@@ -1269,6 +1269,7 @@ async function _deletePreset(id) {
 async function handleCustomEncode(filesOverride = null) {
   const selectedFiles = filesOverride || state.files.filter(f => state.selectedIds.has(f.id));
   if (selectedFiles.length === 0) return;
+  state._ceSelectedFiles = selectedFiles;
 
   const count = selectedFiles.length;
   DOM.customEncodeCount.textContent = `${count} file${count !== 1 ? 's' : ''}`;
@@ -1400,8 +1401,9 @@ function _showCollisionWarning(collisions, outputDir, onConfirm) {
 }
 
 async function _submitCustomEncode() {
-  const selectedFiles = state.files.filter(f => state.selectedIds.has(f.id));
+  const selectedFiles = state._ceSelectedFiles || state.files.filter(f => state.selectedIds.has(f.id));
   if (selectedFiles.length === 0) return;
+  state._ceSelectedFiles = null;
 
   DOM.ceError.classList.add('hidden');
 
