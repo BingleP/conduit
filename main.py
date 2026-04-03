@@ -20,13 +20,14 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from database import db_session, init_db
+from database import DB_PATH, db_session, init_db
 from encoder import (
     get_log,
     get_progress,
     get_queue,
     set_encode_options,
     set_hw_encoder,
+    set_probe_refresh_settings,
     set_vaapi_device,
     start_encoder_thread,
     startup_cleanup,
@@ -212,6 +213,7 @@ def on_startup():
     startup_cleanup()
     set_hw_encoder(HW_ENCODER)
     set_vaapi_device(VAAPI_DEVICE)
+    set_probe_refresh_settings(FFPROBE_PATH, THRESHOLD_KBPS, FLAG_AV1)
     set_encode_options(OUTPUT_VIDEO_CODEC, VIDEO_QUALITY_CQ, AUDIO_LOSSY_ACTION, AUDIO_LANGUAGES, OUTPUT_CONTAINER,
                        SCALE_HEIGHT, PIX_FMT, ENCODER_SPEED, FORCE_STEREO, AUDIO_NORMALIZE, SUBTITLE_MODE,
                        DEINTERLACE, FPS_CAP, AUTOCROP, DENOISE, FORCE_ENCODE_AUDIO)
@@ -506,6 +508,7 @@ def update_settings(req: UpdateSettingsRequest):
 
     with open(_CONFIG_PATH, "w") as f:
         json.dump(config, f, indent=2)
+    set_probe_refresh_settings(FFPROBE_PATH, THRESHOLD_KBPS, FLAG_AV1)
     set_watcher_scan_settings(FFPROBE_PATH, THRESHOLD_KBPS, FLAG_AV1)
     return {"ok": True}
 
@@ -525,6 +528,26 @@ def _get_or_create_dropped_folder(conn) -> int:
     cur = conn.execute("INSERT INTO folders (path) VALUES (?)", (_DROPPED_FOLDER_PATH,))
     conn.commit()
     return cur.lastrowid
+
+
+def _delete_missing_file_rows(conn) -> int:
+    rows = conn.execute("SELECT id, path FROM files").fetchall()
+    deleted = 0
+    for row in rows:
+        if not os.path.exists(row["path"]):
+            conn.execute("DELETE FROM files WHERE id=?", (row["id"],))
+            deleted += 1
+    _remove_empty_dropped_folder(conn)
+    return deleted
+
+
+def _remove_empty_dropped_folder(conn):
+    row = conn.execute("SELECT id FROM folders WHERE path=?", (_DROPPED_FOLDER_PATH,)).fetchone()
+    if not row:
+        return
+    has_files = conn.execute("SELECT 1 FROM files WHERE folder_id=? LIMIT 1", (row["id"],)).fetchone()
+    if not has_files:
+        conn.execute("DELETE FROM folders WHERE id=?", (row["id"],))
 
 
 @app.get("/api/folders")
@@ -592,6 +615,146 @@ def scan_folder_endpoint(folder_id: int):
 @app.get("/api/scan/status")
 def scan_status():
     return get_scan_status()
+
+
+# ---------------------------------------------------------------------------
+# Database tools
+# ---------------------------------------------------------------------------
+
+@app.get("/api/database/stats")
+def database_stats():
+    with db_session() as conn:
+        folder_count = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM folders WHERE path != ?",
+            (_DROPPED_FOLDER_PATH,),
+        ).fetchone()["cnt"]
+        tracked_file_count = conn.execute("SELECT COUNT(*) AS cnt FROM files").fetchone()["cnt"]
+        dropped_file_count = conn.execute(
+            """
+            SELECT COUNT(*) AS cnt
+            FROM files fi
+            JOIN folders fo ON fo.id = fi.folder_id
+            WHERE fo.path = ?
+            """,
+            (_DROPPED_FOLDER_PATH,),
+        ).fetchone()["cnt"]
+        job_rows = conn.execute(
+            "SELECT status, COUNT(*) AS cnt FROM jobs GROUP BY status"
+        ).fetchall()
+
+    jobs = {"queued": 0, "running": 0, "done": 0, "error": 0}
+    for row in job_rows:
+        jobs[row["status"]] = row["cnt"]
+
+    db_size_bytes = os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0
+    return {
+        "folders": folder_count,
+        "files": tracked_file_count,
+        "dropped_files": dropped_file_count,
+        "jobs": jobs,
+        "db_size_bytes": db_size_bytes,
+        "scan": get_scan_status(),
+    }
+
+
+@app.post("/api/database/refresh")
+def refresh_database():
+    with db_session() as conn:
+        folders = conn.execute(
+            "SELECT id, path FROM folders WHERE path != ? ORDER BY added_at ASC",
+            (_DROPPED_FOLDER_PATH,),
+        ).fetchall()
+
+    for folder in folders:
+        start_scan(folder["id"], folder["path"], FFPROBE_PATH, THRESHOLD_KBPS, FLAG_AV1, force_refresh=True)
+
+    return {
+        "ok": True,
+        "queued_folders": len(folders),
+        "message": f"Queued {len(folders)} folder scan(s).",
+    }
+
+
+@app.post("/api/database/prune-missing")
+def prune_missing_database_files():
+    with db_session() as conn:
+        deleted = _delete_missing_file_rows(conn)
+        conn.commit()
+    return {
+        "ok": True,
+        "deleted_files": deleted,
+        "message": f"Removed {deleted} missing file record(s).",
+    }
+
+
+@app.delete("/api/database/jobs/history")
+def clear_job_history():
+    with db_session() as conn:
+        deleted = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM jobs WHERE status IN ('done','error')"
+        ).fetchone()["cnt"]
+        conn.execute("DELETE FROM jobs WHERE status IN ('done','error')")
+        conn.commit()
+    return {
+        "ok": True,
+        "deleted_jobs": deleted,
+        "message": f"Cleared {deleted} completed/error job record(s).",
+    }
+
+
+@app.post("/api/database/vacuum")
+def vacuum_database():
+    before = os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0
+    with db_session() as conn:
+        conn.commit()
+        conn.execute("VACUUM")
+    after = os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0
+    return {
+        "ok": True,
+        "before_bytes": before,
+        "after_bytes": after,
+        "message": "Database compacted.",
+    }
+
+
+@app.delete("/api/database/reset")
+def reset_database():
+    if get_scan_status().get("scanning"):
+        raise HTTPException(status_code=409, detail="A folder scan is currently running. Wait for it to finish before resetting the database.")
+
+    with db_session() as conn:
+        active_jobs = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM jobs WHERE status IN ('queued','running')"
+        ).fetchone()["cnt"]
+        if active_jobs:
+            raise HTTPException(status_code=409, detail="Queued or running jobs exist. Clear the queue before resetting the database.")
+
+        real_folders = conn.execute(
+            "SELECT id FROM folders WHERE path != ?",
+            (_DROPPED_FOLDER_PATH,),
+        ).fetchall()
+        folder_count = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM folders WHERE path != ?",
+            (_DROPPED_FOLDER_PATH,),
+        ).fetchone()["cnt"]
+        file_count = conn.execute("SELECT COUNT(*) AS cnt FROM files").fetchone()["cnt"]
+        job_count = conn.execute("SELECT COUNT(*) AS cnt FROM jobs").fetchone()["cnt"]
+
+        conn.execute("DELETE FROM jobs")
+        conn.execute("DELETE FROM files")
+        conn.execute("DELETE FROM folders")
+        conn.commit()
+
+    for folder in real_folders:
+        unwatch_folder(folder["id"])
+
+    return {
+        "ok": True,
+        "deleted_folders": folder_count,
+        "deleted_files": file_count,
+        "deleted_jobs": job_count,
+        "message": "Database reset. All tracked folders and file records were removed.",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -796,40 +959,6 @@ def cancel_job(job_id: int):
         if row["status"] != "queued":
             raise HTTPException(status_code=400, detail="Only queued jobs can be cancelled")
         conn.execute("DELETE FROM jobs WHERE id=?", (job_id,))
-        conn.commit()
-    return {"ok": True}
-
-
-# ---------------------------------------------------------------------------
-# Optimized files / database management
-# ---------------------------------------------------------------------------
-
-@app.get("/api/optimized-files")
-def list_optimized_files():
-    """Files that have had at least one completed encode/remux job."""
-    with db_session() as conn:
-        rows = conn.execute("""
-            SELECT f.id, f.filename, f.path, f.bitrate_kbps, f.video_codec,
-                   f.needs_optimize, f.size_bytes,
-                   MAX(j.finished_at) AS last_optimized_at,
-                   j.job_type AS last_job_type
-            FROM files f
-            JOIN jobs j ON j.file_id = f.id
-            WHERE j.status = 'done'
-            GROUP BY f.id
-            ORDER BY last_optimized_at DESC
-        """).fetchall()
-    return [dict(r) for r in rows]
-
-
-@app.post("/api/files/{file_id}/reflag")
-def reflag_file(file_id: int):
-    """Mark a file as needing optimization again."""
-    with db_session() as conn:
-        row = conn.execute("SELECT id FROM files WHERE id=?", (file_id,)).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="File not found")
-        conn.execute("UPDATE files SET needs_optimize=1 WHERE id=?", (file_id,))
         conn.commit()
     return {"ok": True}
 
@@ -1045,6 +1174,7 @@ async def jobs_progress(request: Request):
     async def event_generator():
         last_progress_json = ""
         last_queue_json = ""
+        last_job_statuses: dict[int, str] = {}
 
         while True:
             if await request.is_disconnected():
@@ -1060,9 +1190,27 @@ async def jobs_progress(request: Request):
                 last_progress_json = progress_json
                 yield f"event: progress\ndata: {progress_json}\n\n"
 
+            current_job_statuses = {int(job["id"]): job.get("status", "") for job in queue}
+            finished_jobs = []
+            for job in queue:
+                job_id = int(job["id"])
+                status = job.get("status", "")
+                prev_status = last_job_statuses.get(job_id)
+                if prev_status and prev_status not in ("done", "error") and status in ("done", "error"):
+                    finished_jobs.append({
+                        "job_id": job_id,
+                        "file_id": job.get("file_id"),
+                        "status": status,
+                        "filename": job.get("filename"),
+                    })
+            last_job_statuses = current_job_statuses
+
             if queue_json != last_queue_json:
                 last_queue_json = queue_json
                 yield f"event: queue\ndata: {queue_json}\n\n"
+
+            if finished_jobs:
+                yield f"event: done\ndata: {json.dumps(finished_jobs)}\n\n"
 
             await asyncio.sleep(0.5)
 

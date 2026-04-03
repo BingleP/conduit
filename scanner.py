@@ -50,7 +50,7 @@ class ScanStatus:
         }
 
 
-# Each entry: (folder_id, folder_path, ffprobe_path, threshold_kbps, flag_av1)
+# Each entry: (folder_id, folder_path, ffprobe_path, threshold_kbps, flag_av1, force_refresh)
 _scan_queue: deque = deque()
 _scan_status = ScanStatus()
 _scan_lock = threading.Lock()
@@ -256,7 +256,7 @@ def _find_video_files(folder_path: str) -> list:
 # ---------------------------------------------------------------------------
 
 def scan_folder(folder_id: int, folder_path: str, ffprobe_path: str, threshold_kbps: int,
-                flag_av1: bool = True):
+                flag_av1: bool = True, force_refresh: bool = False):
     """Scan a folder; called from a daemon thread. _scan_status.scanning is already True on entry."""
     try:
         files = _find_video_files(folder_path)
@@ -279,8 +279,8 @@ def scan_folder(folder_id: int, folder_path: str, ffprobe_path: str, threshold_k
                         "SELECT id, mtime FROM files WHERE path = ?", (file_path,)
                     ).fetchone()
 
-                    if existing and existing["mtime"] == mtime:
-                        # Up to date, skip ffprobe
+                    if existing and existing["mtime"] == mtime and not force_refresh:
+                        # Up to date, skip ffprobe unless this is a forced refresh
                         continue
 
                     probe = probe_file(ffprobe_path, file_path)
@@ -361,7 +361,7 @@ def _start_next_scan():
     with _scan_lock:
         if not _scan_queue or _scan_status.scanning:
             return
-        folder_id, folder_path, ffprobe_path, threshold_kbps, flag_av1 = _scan_queue.popleft()
+        folder_id, folder_path, ffprobe_path, threshold_kbps, flag_av1, force_refresh = _scan_queue.popleft()
         _scan_status = ScanStatus(
             scanning=True,
             folder_id=folder_id,
@@ -369,26 +369,29 @@ def _start_next_scan():
         )
     t = threading.Thread(
         target=scan_folder,
-        args=(folder_id, folder_path, ffprobe_path, threshold_kbps, flag_av1),
+        args=(folder_id, folder_path, ffprobe_path, threshold_kbps, flag_av1, force_refresh),
         daemon=True,
     )
     t.start()
 
 
 def start_scan(folder_id: int, folder_path: str, ffprobe_path: str, threshold_kbps: int,
-               flag_av1: bool = True):
+               flag_av1: bool = True, force_refresh: bool = False):
     """Queue a folder scan. Starts immediately if idle, otherwise enqueues (deduplicates)."""
     global _scan_status
     with _scan_lock:
         # Deduplicate: skip if already waiting in the queue
         # (we intentionally allow queuing a re-scan of the currently active folder
         # so that files added mid-scan are caught by the follow-up scan)
-        if any(item[0] == folder_id for item in _scan_queue):
-            return
+        for idx, item in enumerate(_scan_queue):
+            if item[0] == folder_id:
+                if force_refresh and not item[5]:
+                    _scan_queue[idx] = (folder_id, folder_path, ffprobe_path, threshold_kbps, flag_av1, True)
+                return
 
         if _scan_status.scanning:
             # Another scan is running — enqueue for later
-            _scan_queue.append((folder_id, folder_path, ffprobe_path, threshold_kbps, flag_av1))
+            _scan_queue.append((folder_id, folder_path, ffprobe_path, threshold_kbps, flag_av1, force_refresh))
             return
 
         # Idle — start immediately
@@ -400,7 +403,7 @@ def start_scan(folder_id: int, folder_path: str, ffprobe_path: str, threshold_kb
 
     t = threading.Thread(
         target=scan_folder,
-        args=(folder_id, folder_path, ffprobe_path, threshold_kbps, flag_av1),
+        args=(folder_id, folder_path, ffprobe_path, threshold_kbps, flag_av1, force_refresh),
         daemon=True,
     )
     t.start()

@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from database import db_session
+from scanner import parse_probe, probe_file
 
 
 # ---------------------------------------------------------------------------
@@ -64,6 +65,9 @@ _queue_changed = threading.Event()
 _settings_lock = threading.Lock()
 _vaapi_device: str = "/dev/dri/renderD128"
 _hw_encoder: str = "nvenc"          # nvenc | qsv | amf | vaapi | software
+_ffprobe_path: str = "ffprobe"
+_threshold_kbps: int = 25000
+_flag_av1: bool = True
 _output_video_codec: str = "hevc"   # hevc | av1 | h264 | vp9
 _video_quality_cq: int = 24         # 0–51; lower = better quality
 _audio_lossy_action: str = "opus"   # opus | aac | copy
@@ -106,6 +110,14 @@ def set_hw_encoder(hw: str):
         if hw == "vaapi" and sys.platform == "win32":
             hw = "software"  # VA-API is Linux-only
         _hw_encoder = hw
+
+
+def set_probe_refresh_settings(ffprobe_path: str, threshold_kbps: int, flag_av1: bool):
+    global _ffprobe_path, _threshold_kbps, _flag_av1
+    with _settings_lock:
+        _ffprobe_path = ffprobe_path or "ffprobe"
+        _threshold_kbps = int(threshold_kbps) if threshold_kbps is not None else 25000
+        _flag_av1 = bool(flag_av1)
 
 
 def set_encode_options(
@@ -768,14 +780,7 @@ def _run_encode(job_id: int, file_row, ffmpeg_path: str):
                         os.rename(bak_path, input_path)
                     raise e
 
-                new_mtime = os.path.getmtime(final_path)
-                new_filename = os.path.basename(final_path)
-                with db_session() as conn:
-                    conn.execute(
-                        "UPDATE files SET path=?, filename=?, mtime=?, needs_optimize=0 WHERE id=?",
-                        (final_path, new_filename, new_mtime, file_row["file_id"]),
-                    )
-                    conn.commit()
+                _refresh_file_record(file_row["file_id"], final_path)
         except Exception as e:
             error_msg = f"Post-encode file handling failed: {e}"
             success = False
@@ -808,6 +813,45 @@ def _run_encode(job_id: int, file_row, ffmpeg_path: str):
             _progress.error_msg = error_msg or "Unknown error"
 
     _queue_changed.set()
+
+
+def _refresh_file_record(file_id: int, file_path: str):
+    with _settings_lock:
+        ffprobe_path = _ffprobe_path
+        threshold_kbps = _threshold_kbps
+        flag_av1 = _flag_av1
+
+    probe = probe_file(ffprobe_path, file_path)
+    if probe is None:
+        raise RuntimeError(f"Failed to probe encoded output: {file_path}")
+
+    info = parse_probe(probe, file_path, threshold_kbps, flag_av1)
+    mtime = os.path.getmtime(file_path)
+    filename = os.path.basename(file_path)
+    now = datetime.now(timezone.utc).isoformat()
+
+    with db_session() as conn:
+        conn.execute(
+            """
+            UPDATE files SET
+                path=?, filename=?, size_bytes=?, duration_s=?, bitrate_kbps=?,
+                video_codec=?, video_profile=?, pix_fmt=?, width=?, height=?,
+                hdr_type=?, color_transfer=?, color_space=?,
+                audio_tracks=?, subtitle_tracks=?, has_attachments=?,
+                needs_optimize=?, scanned_at=?, mtime=?
+            WHERE id=?
+            """,
+            (
+                file_path, filename, info["size_bytes"], info["duration_s"], info["bitrate_kbps"],
+                info["video_codec"], info["video_profile"], info["pix_fmt"],
+                info["width"], info["height"],
+                info["hdr_type"], info["color_transfer"], info["color_space"],
+                info["audio_tracks"], info["subtitle_tracks"], info["has_attachments"],
+                info["needs_optimize"], now, mtime,
+                file_id,
+            ),
+        )
+        conn.commit()
 
 
 def _encoder_worker(ffmpeg_path: str):

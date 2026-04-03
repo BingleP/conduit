@@ -759,6 +759,16 @@ function updateOptimizeBtn() {
   DOM.encodeBtn.disabled   = state.selectedIds.size === 0;
 }
 
+function getSelectedTrackedFiles() {
+  const selected = new Map();
+  for (const file of [...state.files, ...state.flaggedFiles]) {
+    if (state.selectedIds.has(file.id) && !selected.has(file.id)) {
+      selected.set(file.id, file);
+    }
+  }
+  return [...selected.values()];
+}
+
 // ---------------------------------------------------------------------------
 // Filters, sorting, pagination
 // ---------------------------------------------------------------------------
@@ -874,7 +884,7 @@ function bindSelectAll() {
 // ---------------------------------------------------------------------------
 
 function handleOptimize() {
-  const selectedFiles = state.files.filter(f => state.selectedIds.has(f.id));
+  const selectedFiles = getSelectedTrackedFiles();
   if (selectedFiles.length === 0) return;
 
   const hdrFiles    = selectedFiles.filter(f => f.hdr_type === 'hdr10plus' || f.hdr_type === 'dolby_vision');
@@ -1299,7 +1309,7 @@ async function _deletePreset(id) {
 }
 
 async function handleCustomEncode(filesOverride = null) {
-  const selectedFiles = filesOverride || state.files.filter(f => state.selectedIds.has(f.id));
+  const selectedFiles = filesOverride || getSelectedTrackedFiles();
   if (selectedFiles.length === 0) return;
   state._ceSelectedFiles = selectedFiles;
 
@@ -1434,7 +1444,7 @@ function _showCollisionWarning(collisions, outputDir, onConfirm) {
 }
 
 async function _submitCustomEncode() {
-  const selectedFiles = state._ceSelectedFiles || state.files.filter(f => state.selectedIds.has(f.id));
+  const selectedFiles = state._ceSelectedFiles || getSelectedTrackedFiles();
   if (selectedFiles.length === 0) return;
   state._ceSelectedFiles = null;
 
@@ -1799,6 +1809,7 @@ function renderFlaggedPanel() {
     if (btn) btn.addEventListener('click', e => {
       e.stopPropagation();
       files.forEach(f => state.selectedIds.add(f.id));
+      updateOptimizeBtn();
       renderTable();
       renderFlaggedPanel();
     });
@@ -2450,66 +2461,104 @@ function switchSettingsTab(tab) {
   document.querySelectorAll('.settings-tab-content').forEach(div => {
     div.classList.toggle('active', div.id === `stab-${tab}`);
   });
-  if (tab === 'database') loadOptimizedFiles();
+  if (tab === 'database') loadDatabaseTools();
   if (tab === 'presets')  loadPresetsTab();
 }
 
-async function loadOptimizedFiles() {
-  const list = $('db-optimized-list');
-  const reflagAllBtn = $('db-reflag-all-btn');
-  list.innerHTML = '<div class="db-empty db-loading">Loading…</div>';
+function _setDbToolsFeedback(message, isError = false) {
+  const el = $('db-tools-feedback');
+  if (!el) return;
+  if (!message) {
+    el.classList.add('hidden');
+    el.textContent = '';
+    el.classList.remove('db-feedback-error', 'db-feedback-success');
+    return;
+  }
+  el.textContent = message;
+  el.classList.remove('hidden');
+  el.classList.toggle('db-feedback-error', !!isError);
+  el.classList.toggle('db-feedback-success', !isError);
+}
+
+function renderDatabaseStats(stats) {
+  const el = $('db-stats');
+  if (!el) return;
+  const scan = stats.scan || {};
+  const scanText = scan.scanning
+    ? `Scanning${scan.queued ? ` · ${scan.queued} queued` : ''}`
+    : ((scan.queued || 0) > 0 ? `${scan.queued} queued` : 'Idle');
+  el.innerHTML = `
+    <div class="db-stat-card">
+      <div class="db-stat-label">Folders</div>
+      <div class="db-stat-value">${stats.folders ?? 0}</div>
+      <div class="db-stat-subtext">Tracked media folders</div>
+    </div>
+    <div class="db-stat-card">
+      <div class="db-stat-label">Files</div>
+      <div class="db-stat-value">${stats.files ?? 0}</div>
+      <div class="db-stat-subtext">Dropped: ${stats.dropped_files ?? 0}</div>
+    </div>
+    <div class="db-stat-card">
+      <div class="db-stat-label">Jobs</div>
+      <div class="db-stat-value">${(stats.jobs?.queued ?? 0) + (stats.jobs?.running ?? 0) + (stats.jobs?.done ?? 0) + (stats.jobs?.error ?? 0)}</div>
+      <div class="db-stat-subtext">Queued ${stats.jobs?.queued ?? 0} · Running ${stats.jobs?.running ?? 0} · History ${(stats.jobs?.done ?? 0) + (stats.jobs?.error ?? 0)}</div>
+    </div>
+    <div class="db-stat-card">
+      <div class="db-stat-label">DB Size</div>
+      <div class="db-stat-value">${fmtSize(stats.db_size_bytes ?? 0)}</div>
+      <div class="db-stat-subtext">SQLite file on disk</div>
+    </div>
+    <div class="db-stat-card">
+      <div class="db-stat-label">Scan Status</div>
+      <div class="db-stat-value">${scanText}</div>
+      <div class="db-stat-subtext">Current file: ${escHtml(scan.current_file || '—')}</div>
+    </div>`;
+}
+
+async function loadDatabaseTools() {
+  const el = $('db-stats');
+  if (!el) return;
+  el.innerHTML = '<div class="db-stat-card"><div class="db-stat-label">Database</div><div class="db-stat-value">Loading…</div></div>';
   try {
-    const files = await GET('/api/optimized-files');
-    if (files.length === 0) {
-      list.innerHTML = '<div class="db-empty">No optimized files yet.</div>';
-      reflagAllBtn.style.display = 'none';
-      return;
-    }
-    reflagAllBtn.style.display = '';
-    list.innerHTML = '';
-    for (const f of files) {
-      const row = document.createElement('div');
-      row.className = 'db-file-row';
-      row.dataset.fileId = f.id;
-      const date = f.last_optimized_at ? f.last_optimized_at.replace('T', ' ').slice(0, 16) : '—';
-      const flagged = f.needs_optimize === 1;
-      row.innerHTML = `
-        <div class="db-file-info">
-          <span class="db-file-name" title="${escHtml(f.path)}">${escHtml(f.filename)}</span>
-          <span class="db-file-meta">${f.video_codec?.toUpperCase() ?? '—'} · ${f.bitrate_kbps ? Math.round(f.bitrate_kbps / 1000) + ' Mbps' : '—'} · ${f.last_job_type} · ${date}</span>
-        </div>
-        <button class="btn-db-reflag ${flagged ? 'btn-db-reflag-active' : ''}" data-file-id="${f.id}" ${flagged ? 'disabled' : ''}>
-          ${flagged ? 'Flagged' : 'Re-flag'}
-        </button>`;
-      list.appendChild(row);
-    }
-    list.querySelectorAll('.btn-db-reflag:not([disabled])').forEach(btn => {
-      btn.addEventListener('click', () => reflagFile(parseInt(btn.dataset.fileId, 10), btn));
-    });
+    const stats = await GET('/api/database/stats');
+    renderDatabaseStats(stats);
   } catch (e) {
-    list.innerHTML = `<div class="db-empty db-error">Failed to load: ${e.message}</div>`;
-    reflagAllBtn.style.display = 'none';
+    el.innerHTML = `<div class="db-stat-card"><div class="db-stat-label">Database</div><div class="db-stat-value">Error</div><div class="db-stat-subtext">${escHtml(e.message)}</div></div>`;
   }
 }
 
-async function reflagFile(fileId, btn) {
-  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+async function runDatabaseTool(btn, { method = 'POST', path, confirmText = '', loadingText = 'Working…' }) {
+  if (confirmText && !confirm(confirmText)) return;
+
+  const buttons = Array.from(document.querySelectorAll('#stab-database .db-tool-btn'));
+  const previousText = btn.textContent;
+  _setDbToolsFeedback('');
+  buttons.forEach(b => { b.disabled = true; });
+  btn.textContent = loadingText;
+
   try {
-    await POST(`/api/files/${fileId}/reflag`, {});
-    if (btn) { btn.textContent = 'Flagged'; btn.classList.add('btn-db-reflag-active'); }
-    const f = state.files.find(f => f.id === fileId);
-    if (f) { f.needs_optimize = 1; renderTable(); }
+    let result;
+    if (method === 'DELETE') result = await DELETE(path);
+    else if (method === 'POST') result = await POST(path, {});
+    else result = await GET(path);
+
+    _setDbToolsFeedback(result?.message || 'Database action completed.');
+    state.selectedIds.clear();
+    await fetchFolders();
+    await fetchFiles();
     fetchFlaggedFiles();
+    try {
+      state.jobs = await GET('/api/jobs');
+      renderQueue();
+      renderHistory();
+    } catch {}
+    await loadDatabaseTools();
+    if (path === '/api/database/refresh') pollScanStatus();
   } catch (e) {
-    if (btn) { btn.disabled = false; btn.textContent = 'Re-flag'; }
-    console.error('reflag failed', e);
-  }
-}
-
-async function reflagAllOptimized() {
-  const btns = document.querySelectorAll('#db-optimized-list .btn-db-reflag:not([disabled])');
-  for (const btn of btns) {
-    await reflagFile(parseInt(btn.dataset.fileId, 10), btn);
+    _setDbToolsFeedback(e.message || 'Database action failed.', true);
+  } finally {
+    buttons.forEach(b => { b.disabled = false; });
+    btn.textContent = previousText;
   }
 }
 
@@ -2744,7 +2793,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  $('db-reflag-all-btn').addEventListener('click', reflagAllOptimized);
+  $('db-refresh-btn').addEventListener('click', () => runDatabaseTool($('db-refresh-btn'), {
+    path: '/api/database/refresh',
+    loadingText: 'Refreshing…',
+  }));
+  $('db-prune-btn').addEventListener('click', () => runDatabaseTool($('db-prune-btn'), {
+    path: '/api/database/prune-missing',
+    confirmText: 'Remove DB entries for files that no longer exist on disk?',
+    loadingText: 'Pruning…',
+  }));
+  $('db-clear-history-btn').addEventListener('click', () => runDatabaseTool($('db-clear-history-btn'), {
+    method: 'DELETE',
+    path: '/api/database/jobs/history',
+    confirmText: 'Clear completed and failed job history?',
+    loadingText: 'Clearing…',
+  }));
+  $('db-vacuum-btn').addEventListener('click', () => runDatabaseTool($('db-vacuum-btn'), {
+    path: '/api/database/vacuum',
+    loadingText: 'Compacting…',
+  }));
+  $('db-reset-btn').addEventListener('click', () => runDatabaseTool($('db-reset-btn'), {
+    method: 'DELETE',
+    path: '/api/database/reset',
+    confirmText: 'Reset the Conduit database? This removes all tracked folders, files, and jobs from Conduit, but does NOT delete your media files on disk.',
+    loadingText: 'Resetting…',
+  }));
 
   bindModals();
   bindSettingsModal();

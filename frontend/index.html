@@ -879,12 +879,56 @@
 
         <!-- Database tab -->
         <div id="stab-database" class="settings-tab-content">
-          <div class="settings-field db-tab-header">
-            <span class="modal-label">Previously Optimized Files</span>
-            <button id="db-reflag-all-btn" class="btn-db-reflag-all">Re-flag All</button>
+          <div class="settings-field">
+            <span class="modal-label">Database tools</span>
           </div>
-          <p class="modal-hint" style="margin-bottom:12px">Files that have had a completed encode or remux job. Once a file is optimized, Conduit marks it as done and removes it from the optimization queue. Use Re-flag to put a file back in the queue — for example, if you changed your quality settings and want to re-encode it, or if you want to remux a file you previously encoded.</p>
-          <div id="db-optimized-list" class="db-optimized-list"></div>
+          <p class="modal-hint" style="margin-bottom:12px">Conduit keeps one database record per tracked file. Use these tools to refresh metadata, clean up stale records, compact the SQLite file, or reset the library without touching your media files on disk.</p>
+
+          <div id="db-stats" class="db-stats-panel">Loading database stats…</div>
+
+          <div class="db-tools-grid">
+            <div class="db-tool-card">
+              <div class="db-tool-copy">
+                <div class="db-tool-title">Refresh database</div>
+                <div class="db-tool-desc">Re-scan every tracked media folder and pull in the latest file metadata from disk.</div>
+              </div>
+              <button id="db-refresh-btn" class="btn-cancel db-tool-btn">Refresh Now</button>
+            </div>
+
+            <div class="db-tool-card">
+              <div class="db-tool-copy">
+                <div class="db-tool-title">Remove missing files</div>
+                <div class="db-tool-desc">Delete DB rows for files that no longer exist on disk. Useful after manual file moves or deletions outside Conduit.</div>
+              </div>
+              <button id="db-prune-btn" class="btn-cancel db-tool-btn">Prune Missing</button>
+            </div>
+
+            <div class="db-tool-card">
+              <div class="db-tool-copy">
+                <div class="db-tool-title">Clear job history</div>
+                <div class="db-tool-desc">Remove completed and failed job records while keeping the active queue and tracked library intact.</div>
+              </div>
+              <button id="db-clear-history-btn" class="btn-cancel db-tool-btn">Clear History</button>
+            </div>
+
+            <div class="db-tool-card">
+              <div class="db-tool-copy">
+                <div class="db-tool-title">Compact database</div>
+                <div class="db-tool-desc">Run SQLite VACUUM to reclaim free space after cleanup and keep the DB file tidy.</div>
+              </div>
+              <button id="db-vacuum-btn" class="btn-cancel db-tool-btn">Compact DB</button>
+            </div>
+
+            <div class="db-tool-card db-tool-card-danger">
+              <div class="db-tool-copy">
+                <div class="db-tool-title">Reset database</div>
+                <div class="db-tool-desc">Remove all tracked folders, files, and job records from Conduit. Your actual media files are not deleted.</div>
+              </div>
+              <button id="db-reset-btn" class="btn-confirm db-tool-btn">Reset Database</button>
+            </div>
+          </div>
+
+          <div id="db-tools-feedback" class="db-tools-feedback hidden"></div>
         </div>
         </div><!-- end settings-content-area -->
       </div>
