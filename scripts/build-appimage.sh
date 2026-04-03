@@ -35,7 +35,9 @@ LINUXDEPLOY="$BUILD_DIR/linuxdeploy-x86_64.AppImage"
 curl -L -o "$LINUXDEPLOY" https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
 chmod +x "$LINUXDEPLOY"
 
-export OUTPUT="$DIST_DIR/Conduit-${VERSION}-x86_64.AppImage"
+OUTPUT_PATH="$DIST_DIR/Conduit-${VERSION}-x86_64.AppImage"
+export OUTPUT="$OUTPUT_PATH"
+export LDAI_OUTPUT="$OUTPUT_PATH"
 export ARCH=x86_64
 export PYWEBVIEW_GUI=qt
 export QTWEBENGINE_DISABLE_SANDBOX=1
@@ -45,6 +47,9 @@ export QTWEBENGINE_DISABLE_SANDBOX=1
   --icon-file "$APPDIR/conduit.png" \
   --output appimage
 
-mv "$ROOT"/Conduit-*.AppImage "$OUTPUT"
+if [[ ! -f "$OUTPUT_PATH" ]]; then
+  echo "Expected AppImage not found at $OUTPUT_PATH" >&2
+  exit 1
+fi
 
-echo "Built $OUTPUT"
+echo "Built $OUTPUT_PATH"
