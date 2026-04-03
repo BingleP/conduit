@@ -27,6 +27,11 @@ def api_client(monkeypatch, test_db_path):
     monkeypatch.setattr(main, "set_encode_options", lambda *args, **kwargs: None)
     monkeypatch.setattr(main, "set_hw_encoder", lambda *args, **kwargs: None)
     monkeypatch.setattr(main, "set_vaapi_device", lambda *args, **kwargs: None)
+    monkeypatch.setattr(main, "WEB_UI_USERNAME", "")
+    monkeypatch.setattr(main, "WEB_UI_PASSWORD", "")
+    monkeypatch.setattr(main, "WEB_UI_ENABLED", False)
+    monkeypatch.setattr(main, "WEB_UI_HOST", "0.0.0.0")
+    monkeypatch.setattr(main, "WEB_UI_PORT", 8000)
 
     frontend_dir = Path(main.__file__).resolve().parent / "frontend"
     if not any(getattr(route, "path", None) == "/" for route in main.app.routes):
