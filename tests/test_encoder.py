@@ -1,4 +1,5 @@
 import json
+import threading
 
 import encoder
 
@@ -279,6 +280,163 @@ def test_build_ffmpeg_cmd_for_webm_vaapi_remux_paths():
 
     assert ["-c:v", "copy"] == remux_cmd[remux_cmd.index("-c:v"):remux_cmd.index("-c:v") + 2]
     assert "-vaapi_device" not in remux_cmd
+
+
+def test_run_encode_marks_job_done_for_output_dir(monkeypatch, test_db_path, tmp_path):
+    input_path = tmp_path / "input.mkv"
+    input_path.write_bytes(b"input")
+    output_dir = tmp_path / "encoded"
+    output_dir.mkdir()
+
+    with encoder.db_session() as conn:
+        conn.execute("INSERT INTO folders (path) VALUES (?)", (str(tmp_path),))
+        conn.execute(
+            "INSERT INTO files (folder_id, path, filename, needs_optimize, duration_s) VALUES (1, ?, 'input.mkv', 1, 10.0)",
+            (str(input_path),),
+        )
+        conn.execute("INSERT INTO jobs (file_id, status) VALUES (1, 'queued')")
+        conn.commit()
+
+    captured = {}
+    encoder._queue_changed = threading.Event()
+
+    def fake_cropdetect(path, ffmpeg_path, duration_s):
+        captured["cropdetect"] = (path, ffmpeg_path, duration_s)
+        return "100:100:0:0"
+
+    def fake_build_cmd(*args, **kwargs):
+        captured["crop_str"] = kwargs["crop_str"]
+        return ["ffmpeg-test", "-progress", "pipe:1", str(output_dir / "input.mkv")]
+
+    class FakeProc:
+        def __init__(self, cmd, **kwargs):
+            self.stdout = iter(["frame=120\n", "fps=60\n", "out_time_ms=10000000\n", "progress=end\n"])
+            self.stderr = iter([])
+            self.returncode = 0
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(encoder, "_run_cropdetect", fake_cropdetect)
+    monkeypatch.setattr(encoder, "build_ffmpeg_cmd", fake_build_cmd)
+    monkeypatch.setattr(encoder.subprocess, "Popen", lambda cmd, **kwargs: FakeProc(cmd, **kwargs))
+
+    file_row = {
+        "file_id": 1,
+        "path": str(input_path),
+        "filename": "input.mkv",
+        "job_type": "encode",
+        "keep_original": 0,
+        "duration_s": 10.0,
+        "output_dir": str(output_dir),
+        "output_container": "mkv",
+        "hw_encoder": None,
+        "output_video_codec": None,
+        "video_quality_cq": None,
+        "audio_lossy_action": None,
+        "scale_height": None,
+        "pix_fmt": None,
+        "encoder_speed": None,
+        "force_stereo": None,
+        "audio_normalize": None,
+        "subtitle_mode": None,
+        "deinterlace": None,
+        "fps_cap": None,
+        "autocrop": 1,
+        "denoise": None,
+        "force_encode_audio": None,
+        "extra_args": None,
+    }
+
+    encoder._run_encode(1, file_row, "ffmpeg-test")
+
+    assert captured["cropdetect"] == (str(input_path), "ffmpeg-test", 10.0)
+    assert captured["crop_str"] == "100:100:0:0"
+    assert encoder._queue_changed.is_set()
+    assert encoder.get_progress()["status"] == "done"
+
+    with encoder.db_session() as conn:
+        job = conn.execute("SELECT status, error_msg FROM jobs WHERE id=1").fetchone()
+        file_row_db = conn.execute("SELECT needs_optimize FROM files WHERE id=1").fetchone()
+
+    assert job["status"] == "done"
+    assert job["error_msg"] is None
+    assert file_row_db["needs_optimize"] == 0
+
+
+
+def test_run_encode_marks_job_error_and_cleans_partial_output(monkeypatch, test_db_path, tmp_path):
+    encoder.set_encode_options(output_container="mkv")
+    input_path = tmp_path / "movie.mkv"
+    input_path.write_bytes(b"input")
+    expected_output = tmp_path / "movie.new.mkv"
+
+    with encoder.db_session() as conn:
+        conn.execute("INSERT INTO folders (path) VALUES (?)", (str(tmp_path),))
+        conn.execute(
+            "INSERT INTO files (folder_id, path, filename, needs_optimize, duration_s) VALUES (1, ?, 'movie.mkv', 1, 5.0)",
+            (str(input_path),),
+        )
+        conn.execute("INSERT INTO jobs (file_id, status) VALUES (1, 'queued')")
+        conn.commit()
+
+    encoder._queue_changed = threading.Event()
+
+    class FakeProc:
+        def __init__(self, cmd, **kwargs):
+            self.stdout = iter(["progress=continue\n"])
+            self.stderr = iter(["bad option\n", "encode failed\n"])
+            self.returncode = 1
+            expected_output.write_bytes(b"partial")
+
+        def wait(self):
+            return 1
+
+        def kill(self):
+            return None
+
+    monkeypatch.setattr(encoder, "build_ffmpeg_cmd", lambda *args, **kwargs: ["ffmpeg-test", str(expected_output)])
+    monkeypatch.setattr(encoder.subprocess, "Popen", lambda cmd, **kwargs: FakeProc(cmd, **kwargs))
+
+    file_row = {
+        "file_id": 1,
+        "path": str(input_path),
+        "filename": "movie.mkv",
+        "job_type": "encode",
+        "keep_original": 0,
+        "duration_s": 5.0,
+        "output_dir": None,
+        "output_container": None,
+        "hw_encoder": None,
+        "output_video_codec": None,
+        "video_quality_cq": None,
+        "audio_lossy_action": None,
+        "scale_height": None,
+        "pix_fmt": None,
+        "encoder_speed": None,
+        "force_stereo": None,
+        "audio_normalize": None,
+        "subtitle_mode": None,
+        "deinterlace": None,
+        "fps_cap": None,
+        "autocrop": 0,
+        "denoise": None,
+        "force_encode_audio": None,
+        "extra_args": "-badflag 1",
+    }
+
+    encoder._run_encode(1, file_row, "ffmpeg-test")
+
+    with encoder.db_session() as conn:
+        job = conn.execute("SELECT status, error_msg FROM jobs WHERE id=1").fetchone()
+
+    assert job["status"] == "error"
+    assert "Custom args were active" in job["error_msg"]
+    assert "ffmpeg exited 1" in job["error_msg"]
+    assert not expected_output.exists()
+    assert encoder.get_progress()["status"] == "error"
+    assert encoder._queue_changed.is_set()
+
 
 
 def test_parse_progress_line_handles_valid_and_invalid_input():
