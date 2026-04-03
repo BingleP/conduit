@@ -149,8 +149,20 @@ Double-click `conduit.bat` or launch from the Start Menu.
 
 The app opens a native window. All services (server, encoder, scanner) run only while the window is open and stop when you close it.
 
-### Headless / server mode
+### Running tests
+After installation, run the automated test suite from the project root:
 
+```bash
+./venv/bin/python -m pytest
+```
+
+If you are not using the bundled virtual environment, install `requirements.txt` first and then run:
+
+```bash
+python -m pytest
+```
+
+### Headless / server mode
 Run Conduit without a window, exposing the Web UI on your network:
 
 **Linux:**
