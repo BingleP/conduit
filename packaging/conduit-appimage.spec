@@ -1,4 +1,8 @@
+from pathlib import Path
+
 from PyInstaller.utils.hooks import collect_all, collect_submodules
+
+ROOT = Path(SPECPATH).resolve().parent
 
 webview_datas, webview_binaries, webview_hidden = collect_all('webview')
 pyside_datas, pyside_binaries, pyside_hidden = collect_all('PySide6')
@@ -30,15 +34,15 @@ hiddenimports = sorted(set(
 ))
 
 datas = [
-    ('frontend', 'frontend'),
-    ('config.json', '.'),
+    (str(ROOT / 'frontend'), 'frontend'),
+    (str(ROOT / 'config.json'), '.'),
 ] + webview_datas + pyside_datas + shiboken_datas + qtpy_datas
 
 binaries = webview_binaries + pyside_binaries + shiboken_binaries + qtpy_binaries
 
 
 a = Analysis(
-    ['desktop.py'],
+    [str(ROOT / 'desktop.py')],
     pathex=[],
     binaries=binaries,
     datas=datas,
