@@ -156,6 +156,8 @@ After installation, run the automated test suite from the project root:
 ./venv/bin/python -m pytest
 ```
 
+The pytest configuration also enables coverage output automatically and writes `coverage.xml` for CI.
+
 If you are not using the bundled virtual environment, install `requirements.txt` first and then run:
 
 ```bash

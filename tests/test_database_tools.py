@@ -1,20 +1,8 @@
-import sqlite3
-from pathlib import Path
-
 import database
 import main
 
 
-def _set_test_db(monkeypatch, tmp_path):
-    db_path = tmp_path / "test.db"
-    monkeypatch.setattr(database, "DB_PATH", str(db_path))
-    monkeypatch.setattr(main, "DB_PATH", str(db_path))
-    database.init_db()
-    return db_path
-
-
-def test_database_stats_reports_counts(monkeypatch, tmp_path):
-    _set_test_db(monkeypatch, tmp_path)
+def test_database_stats_reports_counts(monkeypatch, tmp_path, test_db_path):
 
     with database.db_session() as conn:
         conn.execute("INSERT INTO folders (path) VALUES (?)", ("/library",))
@@ -41,13 +29,11 @@ def test_database_stats_reports_counts(monkeypatch, tmp_path):
     assert stats["jobs"] == {"queued": 1, "running": 0, "done": 1, "error": 0}
 
 
-def test_prune_missing_database_files_removes_missing_rows_and_empty_dropped_folder(monkeypatch, tmp_path):
+def test_prune_missing_database_files_removes_missing_rows_and_empty_dropped_folder(monkeypatch, tmp_path, test_db_path):
     existing = tmp_path / "keep.mkv"
     existing.write_text("video")
     missing = tmp_path / "missing.mkv"
     dropped_missing = tmp_path / "dropped_missing.mkv"
-
-    _set_test_db(monkeypatch, tmp_path)
 
     with database.db_session() as conn:
         conn.execute("INSERT INTO folders (path) VALUES (?)", ("/library",))
@@ -77,8 +63,7 @@ def test_prune_missing_database_files_removes_missing_rows_and_empty_dropped_fol
     assert folders == ["/library"]
 
 
-def test_refresh_database_queues_force_refresh_scan_for_real_folders(monkeypatch, tmp_path):
-    _set_test_db(monkeypatch, tmp_path)
+def test_refresh_database_queues_force_refresh_scan_for_real_folders(monkeypatch, tmp_path, test_db_path):
 
     with database.db_session() as conn:
         conn.execute("INSERT INTO folders (path) VALUES (?)", ("/library/a",))
@@ -105,8 +90,7 @@ def test_refresh_database_queues_force_refresh_scan_for_real_folders(monkeypatch
     ]
 
 
-def test_reset_database_rejects_when_active_jobs_exist(monkeypatch, tmp_path):
-    _set_test_db(monkeypatch, tmp_path)
+def test_reset_database_rejects_when_active_jobs_exist(monkeypatch, tmp_path, test_db_path):
 
     with database.db_session() as conn:
         conn.execute("INSERT INTO folders (path) VALUES (?)", ("/library",))
@@ -125,8 +109,7 @@ def test_reset_database_rejects_when_active_jobs_exist(monkeypatch, tmp_path):
         raise AssertionError("Expected reset_database to reject active jobs")
 
 
-def test_reset_database_clears_records_and_unwatches_real_folders(monkeypatch, tmp_path):
-    _set_test_db(monkeypatch, tmp_path)
+def test_reset_database_clears_records_and_unwatches_real_folders(monkeypatch, tmp_path, test_db_path):
 
     with database.db_session() as conn:
         conn.execute("INSERT INTO folders (path) VALUES (?)", ("/library/a",))

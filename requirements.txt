@@ -5,3 +5,5 @@ aiofiles
 pywebview
 watchdog
 pytest
+httpx
+pytest-cov
