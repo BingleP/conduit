@@ -20,6 +20,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from conduit_paths import ensure_default_config, ensure_runtime_dirs, resource_path
 from database import DB_PATH, db_session, init_db
 from encoder import (
     get_log,
@@ -42,11 +43,13 @@ from scanner import (
 # Config
 # ---------------------------------------------------------------------------
 
-_CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+ensure_runtime_dirs()
+_CONFIG_PATH = str(ensure_default_config())
 _settings_lock = threading.Lock()
 
 def load_config() -> dict:
-    with open(_CONFIG_PATH) as f:
+    ensure_default_config()
+    with open(_CONFIG_PATH, encoding="utf-8") as f:
         return json.load(f)
 
 CONFIG = load_config()
@@ -156,7 +159,7 @@ BUILTIN_PRESETS = [
 def _save_config():
     config = load_config()
     config["user_presets"] = USER_PRESETS
-    with open(_CONFIG_PATH, "w") as f:
+    with open(_CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2)
 
 
@@ -1228,7 +1231,7 @@ async def jobs_progress(request: Request):
 # Static frontend
 # ---------------------------------------------------------------------------
 
-_FRONTEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend")
+_FRONTEND_DIR = str(resource_path("frontend"))
 app.mount("/", StaticFiles(directory=_FRONTEND_DIR, html=True), name="frontend")
 
 

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Conduit
+Comment=Video library manager and optimizer
+Exec=conduit
+Icon=conduit
+Categories=AudioVideo;Video;
+Terminal=false
+StartupWMClass=Conduit
+Keywords=media;video;encode;transcode;optimize;

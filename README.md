@@ -29,6 +29,12 @@ Runs as a desktop app (native window via pywebview) with an optional Web UI for 
 ### Linux
 - Arch, Debian/Ubuntu, Fedora, or openSUSE (other distros may work)
 - Qt6 WebEngine system packages (installed automatically by `install.sh`)
+- Optional portable release: AppImage
+
+### macOS
+- Unsigned DMG release artifact available for Apple Silicon / Intel runners as published by GitHub Actions
+- ffmpeg and ffprobe available in PATH, or configure their paths in Conduit after first launch
+- Because the DMG is unsigned, macOS will warn before opening it
 
 ### Windows
 - Windows 11 (Windows 10 may work but is untested)
@@ -44,6 +50,14 @@ Runs as a desktop app (native window via pywebview) with an optional Web UI for 
 ---
 
 ## Installation
+
+### Release artifacts
+
+GitHub releases now target:
+- Windows: `conduit-<version>-setup.exe`
+- Linux: `Conduit-<version>-x86_64.AppImage`
+- macOS: `Conduit-<version>-macos.dmg` (unsigned)
+- Source: `conduit-<version>-source.zip`
 
 ### Linux
 

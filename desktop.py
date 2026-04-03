@@ -17,10 +17,14 @@ import time
 import urllib.request
 import urllib.error
 
+from conduit_paths import bundle_dir, ensure_default_config, ensure_runtime_dirs, log_path, resource_path
+
 # Ensure the project directory is on the path so imports work regardless of cwd
-_PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+_PROJECT_DIR = str(bundle_dir())
 if _PROJECT_DIR not in sys.path:
     sys.path.insert(0, _PROJECT_DIR)
+ensure_runtime_dirs()
+ensure_default_config()
 os.chdir(_PROJECT_DIR)
 
 # ---------------------------------------------------------------------------
@@ -29,7 +33,7 @@ os.chdir(_PROJECT_DIR)
 
 import logging
 
-_LOG_PATH = os.path.join(_PROJECT_DIR, "desktop.log")
+_LOG_PATH = str(log_path())
 logging.basicConfig(
     filename=_LOG_PATH,
     level=logging.DEBUG,
@@ -191,7 +195,7 @@ def main():
             # Linux: pre-configure Qt/PySide6 identity before webview.start() so
             # the Wayland compositor gets the correct app_id when the XDG surface
             # is first mapped.  pywebview reuses an existing QApplication instance.
-            _icon_path = os.path.join(_PROJECT_DIR, "frontend", "icons", "conduit-256.png")
+            _icon_path = str(resource_path("frontend", "icons", "conduit-256.png"))
             try:
                 from PySide6.QtWidgets import QApplication
                 from PySide6.QtGui import QIcon
@@ -222,7 +226,7 @@ def main():
         window.events.closed += on_closed
 
         if sys.platform == 'win32':
-            _ico_path = os.path.join(_PROJECT_DIR, "frontend", "icons", "conduit.ico")
+            _ico_path = str(resource_path("frontend", "icons", "conduit.ico"))
 
             def _on_shown_win32():
                 """Set window/taskbar icon via Win32 API after Edge WebView2 appears."""
