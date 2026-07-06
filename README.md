@@ -466,7 +466,7 @@ systemctl --user daemon-reload
 
 | Platform | Status |
 |---|---|
-| Linux | Supported via install script (Arch, Debian/Ubuntu, Fedora, openSUSE) |
+| Linux | Supported via AppImage |
 | macOS | Supported via DMG (Apple Silicon) |
 | Windows 11 | Supported via installer |
 | Windows 10 | Untested |
