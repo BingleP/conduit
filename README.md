@@ -32,9 +32,9 @@ Runs as a desktop app (native window via pywebview) with an optional Web UI for 
 - Optional portable release: AppImage
 
 ### macOS
-- Unsigned DMG release artifact available for Apple Silicon / Intel runners as published by GitHub Actions
+- DMG release artifact available for Apple Silicon (ARM64)
 - ffmpeg and ffprobe available in PATH, or configure their paths in Conduit after first launch
-- Because the DMG is unsigned, macOS will warn before opening it
+- Because the DMG is unsigned, macOS will warn before opening it — right-click and select Open
 
 ### Windows
 - Windows 11 (Windows 10 may work but is untested)
@@ -181,7 +181,7 @@ python -m pytest
 ### Headless / server mode
 Run Conduit without a window, exposing the Web UI on your network:
 
-**Linux:**
+**Linux / macOS:**
 ```bash
 conduit --no-gui
 ```
@@ -193,7 +193,7 @@ conduit.bat --no-gui
 
 The server starts on `127.0.0.1:8000` by default. To allow access from other devices, enable the Web UI in **Settings → Network** and restart.
 
-**Linux — stop headless mode:**
+**Linux / macOS — stop headless mode:**
 ```bash
 pkill -f desktop.py
 ```
@@ -450,6 +450,11 @@ rm -f ~/.config/systemd/user/conduit.service
 systemctl --user daemon-reload
 ```
 
+### macOS
+
+1. Delete the Conduit app from your Applications folder or wherever you placed it
+2. Remove config and data: `rm -rf ~/Library/Application\ Support/conduit ~/Library/Logs/conduit`
+
 ### Windows
 
 1. Delete the conduit folder
@@ -460,12 +465,8 @@ systemctl --user daemon-reload
 ## Supported platforms
 
 | Platform | Status |
-|---|---|
-| CachyOS / Arch Linux | Tested |
-| Debian / Ubuntu | Supported via install script |
-| Fedora | Supported via install script |
-| openSUSE | Supported via install script |
-| Other Linux distros | Should work — may need Qt6 WebEngine installed manually |
-| Windows 11 | Supported |
+|---|---|---|
+| Linux | Supported via install script (Arch, Debian/Ubuntu, Fedora, openSUSE) |
+| macOS | Supported via DMG (Apple Silicon) |
+| Windows 11 | Supported via installer |
 | Windows 10 | Untested |
-| macOS | Not supported |
