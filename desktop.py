@@ -74,8 +74,8 @@ _configure_qt_env()
 # ---------------------------------------------------------------------------
 
 def _has_display() -> bool:
-    if sys.platform == 'win32':
-        return True  # Windows always has a display session
+    if sys.platform in ('win32', 'darwin'):
+        return True  # Windows and macOS always have a display session
     return bool(
         os.environ.get("DISPLAY")
         or os.environ.get("WAYLAND_DISPLAY")
