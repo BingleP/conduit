@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
 
+_stop_event = threading.Event()
+
 from database import db_session
 from scanner import parse_probe, probe_file
 
@@ -856,7 +858,7 @@ def _refresh_file_record(file_id: int, file_path: str):
 
 def _encoder_worker(ffmpeg_path: str):
     """Main encoder loop — processes one job at a time."""
-    while True:
+    while not _stop_event.is_set():
         with db_session() as conn:
             row = conn.execute("""
                 SELECT j.id as job_id, j.file_id, j.job_type, j.keep_original,
@@ -876,7 +878,7 @@ def _encoder_worker(ffmpeg_path: str):
             """).fetchone()
 
         if row is None:
-            time.sleep(1)
+            _stop_event.wait(1)
             continue
 
         _run_encode(row["job_id"], row, ffmpeg_path)
@@ -886,35 +888,21 @@ def _encoder_worker(ffmpeg_path: str):
 # Startup cleanup
 # ---------------------------------------------------------------------------
 
-def startup_cleanup():
-    """
-    On startup: reset any 'running' jobs to 'error' (crash recovery),
-    restore original files from .bak if rename failed,
-    delete orphaned .new.* and .bak files.
-    """
+def _cleanup_orphaned_files():
+    """Background task: iterate all files and clean up orphaned .bak/.new.* files."""
+    rows = []
     with db_session() as conn:
-        # Reset running jobs
-        conn.execute(
-            "UPDATE jobs SET status='error', error_msg='Server restarted during encode' "
-            "WHERE status='running'"
-        )
-        conn.commit()
-
-        # Find all file paths
         rows = conn.execute("SELECT path FROM files").fetchall()
-    
     for row in rows:
+        if _stop_event.is_set():
+            return
         path = row["path"]
         bak_path = path + ".bak"
-        
-        # Restore from .bak if original is missing
         if os.path.exists(bak_path) and not os.path.exists(path):
             try:
                 os.rename(bak_path, path)
             except Exception:
                 pass
-        
-        # Delete orphaned .new.* and .bak files
         base, _ = os.path.splitext(path)
         for suffix in (".new.mkv", ".new.webm", ".new.mp4", ".bak"):
             orphan = base + suffix if suffix != ".bak" else path + suffix
@@ -924,7 +912,30 @@ def startup_cleanup():
                 except Exception:
                     pass
 
+def startup_cleanup(wait: bool = False):
+    """
+    On startup: reset any 'running' jobs to 'error' (crash recovery) immediately,
+    then spawn a background thread to clean up orphaned .bak/.new.* files.
+    If wait=True, runs the cleanup synchronously (used in tests).
+    """
+    with db_session() as conn:
+        conn.execute(
+            "UPDATE jobs SET status='error', error_msg='Server restarted during encode' "
+            "WHERE status='running'"
+        )
+        conn.commit()
+
+    if wait:
+        _cleanup_orphaned_files()
+    else:
+        t = threading.Thread(target=_cleanup_orphaned_files, daemon=True)
+        t.start()
+
 
 def start_encoder_thread(ffmpeg_path: str):
+    _stop_event.clear()
     t = threading.Thread(target=_encoder_worker, args=(ffmpeg_path,), daemon=True)
     t.start()
+
+def stop_encoder():
+    _stop_event.set()

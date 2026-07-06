@@ -2006,7 +2006,12 @@ function switchQueueTab(tab) {
   document.querySelectorAll('.queue-tab-content').forEach(div => {
     div.classList.toggle('active', div.id === `queue-tab-${tab}`);
   });
-  if (tab === 'log') renderLog();
+  if (tab === 'log') {
+    renderLog();
+    startLogPolling();
+  } else {
+    stopLogPolling();
+  }
   if (tab === 'history') renderHistory();
 }
 
@@ -2150,12 +2155,13 @@ function connectSSE() {
   });
 
   setInterval(async () => {
+    if (!DOM.queuePanel.classList.contains('expanded')) return;
     try {
       const jobs = await GET('/api/jobs');
       state.jobs = jobs;
       renderQueue();
     } catch {}
-  }, 2000);
+  }, 5000);
 }
 
 function renderProgress(p) {

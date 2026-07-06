@@ -9,6 +9,9 @@ import main
 
 @pytest.fixture
 def test_db_path(monkeypatch, tmp_path):
+    # Reset persistent connection so next db_session() opens with the test path
+    database.close_connection()
+    database._connection = None
     db_path = tmp_path / "test.db"
     monkeypatch.setattr(database, "DB_PATH", str(db_path))
     monkeypatch.setattr(main, "DB_PATH", str(db_path))

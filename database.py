@@ -1,9 +1,13 @@
 import sqlite3
+import threading
 from contextlib import contextmanager
 
 from conduit_paths import db_path
 
 DB_PATH = str(db_path())
+
+_connection: sqlite3.Connection = None
+_connection_lock = threading.Lock()
 
 
 def _connect() -> sqlite3.Connection:
@@ -15,18 +19,40 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+def get_connection() -> sqlite3.Connection:
+    """Return the persistent connection (creates it if needed)."""
+    global _connection
+    if _connection is None:
+        with _connection_lock:
+            if _connection is None:
+                _connection = _connect()
+    return _connection
+
+
+def close_connection():
+    """Close the persistent connection. Used during shutdown."""
+    global _connection
+    with _connection_lock:
+        if _connection is not None:
+            try:
+                _connection.close()
+            except Exception:
+                pass
+            _connection = None
+
+
 @contextmanager
 def db_session():
-    """Context manager for database connections to ensure they are always closed."""
-    conn = _connect()
+    """Context manager for database connections."""
+    conn = get_connection()
     try:
         yield conn
     finally:
-        conn.close()
+        pass  # persistent connection is reused, not closed
 
 
 def get_db() -> sqlite3.Connection:
-    """Returns a new connection. User is responsible for closing."""
+    """Returns a new standalone connection. User is responsible for closing."""
     return _connect()
 
 

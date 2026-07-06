@@ -14,14 +14,13 @@ from typing import Optional
 _log = logging.getLogger("conduit.main")
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from conduit_paths import ensure_default_config, ensure_runtime_dirs, resource_path
-from database import DB_PATH, db_session, init_db
+from database import DB_PATH, db_session, init_db, close_connection
 from encoder import (
     get_log,
     get_progress,
@@ -31,11 +30,12 @@ from encoder import (
     set_probe_refresh_settings,
     set_vaapi_device,
     start_encoder_thread,
+    stop_encoder,
     startup_cleanup,
 )
 from scanner import (
     get_scan_status, start_scan,
-    start_watcher, watch_folder, unwatch_folder, set_watcher_scan_settings,
+    start_watcher, stop_watcher, watch_folder, unwatch_folder, set_watcher_scan_settings,
     probe_file, parse_probe, _find_video_files, VIDEO_EXTENSIONS,
 )
 
@@ -199,15 +199,8 @@ async def _unhandled_exception_handler(request: Request, exc: Exception):
                "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)))
     return JSONResponse(status_code=500, content={"detail": str(exc)})
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 # ---------------------------------------------------------------------------
-# Startup
+# Startup / Shutdown
 # ---------------------------------------------------------------------------
 
 @app.on_event("startup")
@@ -230,6 +223,15 @@ def on_startup():
     for folder in folders:
         watch_folder(folder["id"], folder["path"])
         start_scan(folder["id"], folder["path"], FFPROBE_PATH, THRESHOLD_KBPS, FLAG_AV1)
+
+
+@app.on_event("shutdown")
+def on_shutdown():
+    _log.info("Shutting down — stopping encoder, watcher, and DB connection")
+    stop_encoder()
+    stop_watcher()
+    close_connection()
+    _log.info("Shutdown complete")
 
 
 

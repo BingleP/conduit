@@ -264,6 +264,7 @@ def scan_folder(folder_id: int, folder_path: str, ffprobe_path: str, threshold_k
         with _scan_lock:
             _scan_status.total = len(files)
 
+        BATCH_SIZE = 50
         with db_session() as conn:
             for i, file_path in enumerate(files):
                 with _scan_lock:
@@ -274,13 +275,11 @@ def scan_folder(folder_id: int, folder_path: str, ffprobe_path: str, threshold_k
                     mtime = os.path.getmtime(file_path)
                     filename = os.path.basename(file_path)
 
-                    # Check if already in DB with same mtime
                     existing = conn.execute(
                         "SELECT id, mtime FROM files WHERE path = ?", (file_path,)
                     ).fetchone()
 
                     if existing and existing["mtime"] == mtime and not force_refresh:
-                        # Up to date, skip ffprobe unless this is a forced refresh
                         continue
 
                     probe = probe_file(ffprobe_path, file_path)
@@ -329,13 +328,13 @@ def scan_folder(folder_id: int, folder_path: str, ffprobe_path: str, threshold_k
                             info["needs_optimize"], now, mtime,
                         ))
 
-                    conn.commit()
+                    if i % BATCH_SIZE == 0:
+                        conn.commit()
 
                 except Exception:
                     with _scan_lock:
                         _scan_status.errors += 1
 
-            # Remove DB entries for files that no longer exist on disk
             existing_paths = set(files)
             db_files = conn.execute(
                 "SELECT id, path FROM files WHERE folder_id = ?", (folder_id,)
@@ -488,6 +487,26 @@ def start_watcher():
             return
         _watcher_observer = _Observer()
         _watcher_observer.start()
+
+def stop_watcher():
+    """Stop the watchdog observer and clear all handlers."""
+    global _watcher_observer
+    if not _WATCHDOG_AVAILABLE:
+        return
+    with _watcher_lock:
+        if _watcher_observer is None:
+            return
+        obs = _watcher_observer
+        _watcher_observer = None
+        _watcher_handlers.clear()
+    try:
+        obs.stop()
+    except Exception:
+        pass
+    try:
+        obs.join(timeout=5)
+    except Exception:
+        pass
 
 
 def watch_folder(folder_id: int, folder_path: str):

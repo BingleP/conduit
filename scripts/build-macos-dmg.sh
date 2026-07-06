@@ -35,6 +35,10 @@ cp "$ROOT/frontend/icons/conduit-512.png" "$ICONSET_DIR/icon_512x512.png"
 cp "$ROOT/frontend/icons/conduit-512.png" "$ICONSET_DIR/icon_512x512@2x.png"
 iconutil -c icns "$ICONSET_DIR" -o "$ICNS_PATH"
 
+# Minify frontend assets
+python -m pip install css_html_js_minify --quiet
+python -m css_html_js_minify "$ROOT/frontend" --overwrite --quiet 2>/dev/null || true
+
 pyinstaller "$ROOT/desktop.py" \
   --noconfirm \
   --clean \

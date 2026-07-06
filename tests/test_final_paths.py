@@ -65,6 +65,7 @@ def test_watch_folder_ignores_missing_dirs_and_schedule_failures(monkeypatch, tm
 
 
 def test_encoder_worker_processes_queued_job(monkeypatch):
+    encoder._stop_event.clear()
     class FakeConn:
         def execute(self, query, params=()):
             class Result:
@@ -123,6 +124,7 @@ def test_encoder_worker_processes_queued_job(monkeypatch):
 
 
 def test_encoder_worker_sleeps_when_no_jobs(monkeypatch):
+    encoder._stop_event.clear()
     class FakeConn:
         def execute(self, query, params=()):
             class Result:
@@ -134,21 +136,23 @@ def test_encoder_worker_sleeps_when_no_jobs(monkeypatch):
         def __exit__(self, exc_type, exc, tb):
             return False
 
-    sleeps = []
+    waits = []
     monkeypatch.setattr(encoder, "db_session", lambda: FakeConn())
 
-    def fake_sleep(seconds):
-        sleeps.append(seconds)
+    original_wait = encoder._stop_event.wait
+    def fake_wait(timeout):
+        waits.append(timeout)
+        original_wait(0)
         raise SystemExit("stop")
 
-    monkeypatch.setattr(encoder.time, "sleep", fake_sleep)
+    monkeypatch.setattr(encoder._stop_event, "wait", fake_wait)
 
     try:
         encoder._encoder_worker("ffmpeg-test")
     except SystemExit:
         pass
 
-    assert sleeps == [1]
+    assert waits == [1]
 
 
 
@@ -168,7 +172,7 @@ def test_startup_cleanup_resets_running_jobs_and_restores_files(monkeypatch, tes
         conn.execute("INSERT INTO jobs (file_id, status) VALUES (1, 'running')")
         conn.commit()
 
-    encoder.startup_cleanup()
+    encoder.startup_cleanup(wait=True)
 
     with encoder.db_session() as conn:
         job = conn.execute("SELECT status, error_msg FROM jobs WHERE id=1").fetchone()
